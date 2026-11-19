@@ -41,7 +41,7 @@ function DashboardLayout() {
         />
 
         <main className="p-4 sm:p-6 lg:p-8">
-          <Outlet />
+          <Outlet context={{ user: mockUser }} />
         </main>
       </div>
     </div>

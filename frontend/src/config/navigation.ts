@@ -7,6 +7,7 @@ import {
   ChartNoAxesCombined,
   MessageSquare,
   Settings,
+  History,
 } from "lucide-react";
 
 import type { NavItem } from "../types/navigation";
@@ -43,6 +44,12 @@ export const navigationItems: NavItem[] = [
     allowedRoles: ["DENTIST"],
   },
   {
+    label: "Evaluation History",
+    path: "/evaluation-history",
+    icon: History,
+    allowedRoles: ["ADMIN"],
+  },
+  {
     label: "My Performance",
     path: "/my-performance",
     icon: ChartNoAxesCombined,
@@ -52,7 +59,7 @@ export const navigationItems: NavItem[] = [
     label: "Reports",
     path: "/reports",
     icon: ChartNoAxesCombined,
-    allowedRoles: ["ADMIN", "ASSISTANT"],
+    allowedRoles: ["ADMIN"],
   },
   {
     label: "Patient Feedback",
