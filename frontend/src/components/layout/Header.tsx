@@ -3,6 +3,7 @@ import { useState, useRef, useEffect } from "react";
 import { Bell, Menu, ChevronDown, UserRound, LockKeyhole, LogOut } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { AuthUser } from "../../types/auth";
+import { useAuth } from "../../context/AuthContext";
 
 interface HeaderProps {
   user: AuthUser;
@@ -13,6 +14,7 @@ function Header({ user, onMenuClick }: HeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
+  const { logout } = useAuth();
 
   const initials = user.fullName
     .split(" ")
@@ -26,6 +28,7 @@ function Header({ user, onMenuClick }: HeaderProps) {
     .join(" / ");
 
   useEffect(() => {
+
     const handleClickOutside = (event: MouseEvent) => {
       if (
         menuRef.current &&
@@ -47,11 +50,15 @@ function Header({ user, onMenuClick }: HeaderProps) {
     navigate(path);
   };
 
-  const handleLogout = () => {
-    setMenuOpen(false);
-    // Temporary until backend authentication is implemented.
-    navigate("/");
-  };
+ const handleLogout = async () => {
+  setMenuOpen(false);
+
+  try {
+    await logout();
+  } finally {
+    navigate("/", { replace: true });
+  }
+};
 
   return (
     <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-border bg-surface px-4 sm:px-6 lg:px-8">

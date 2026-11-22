@@ -309,22 +309,7 @@ function AdminDashboard() {
         </Card>
       </div>
 
-      {/* Patient feedback */}
-      <Card padding="lg">
-        <div className="flex items-center gap-3">
-          <div className="rounded-xl bg-accent-light p-3">
-            <MessageSquare size={22} className="text-accent" />
-          </div>
-          <div>
-            <h2 className="font-semibold text-text-main">
-              Patient Feedback
-            </h2>
-            <p className="mt-1 text-sm text-text-muted">
-              Clinic-directed feedback overview will appear here.
-            </p>
-          </div>
-        </div>
-      </Card>
+     
 
     </div>
   );

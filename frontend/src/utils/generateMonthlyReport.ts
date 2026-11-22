@@ -7,25 +7,14 @@ interface MonthlyReportData {
   assistant: string;
   month: string;
   evaluationCount: number;
-  averageScore: number;
-  kpiScores: number[];
+  averageScore: number | null;
+  kpiScores: {
+    criterionName: string;
+    averageWeight: number;
+    averageScore: number;
+  }[];
   observations: string[];
 }
-
-const criteria = [
-  { name: "Room Turnover Time", weight: 10 },
-  { name: "On-Time Seating Rate", weight: 8 },
-  { name: "Chart Prep Completion", weight: 10 },
-  { name: "Lab Case Tracking", weight: 8 },
-  { name: "X-Ray & Image Quality", weight: 10 },
-  { name: "Post-Op Call Success", weight: 9 },
-  { name: "Ready-to-Work Punctuality", weight: 7 },
-  { name: "Uniform & Hygiene Standards", weight: 8 },
-  { name: "Overtime Management", weight: 4 },
-  { name: "Emergency & Late Flexibility", weight: 6 },
-  { name: "In-Chair Waiting Time", weight: 8 },
-  { name: "Patient Comfort & Tone", weight: 12 },
-];
 
 export function generateMonthlyReport(report: MonthlyReportData) {
   const doc = new jsPDF();
@@ -37,7 +26,6 @@ export function generateMonthlyReport(report: MonthlyReportData) {
     year: "numeric",
   });
 
-  // Header
   doc.setFillColor(36, 91, 134);
   doc.rect(0, 0, 210, 38, "F");
 
@@ -48,15 +36,12 @@ export function generateMonthlyReport(report: MonthlyReportData) {
   doc.setFontSize(11);
   doc.text("Monthly Assistant Performance Report", 15, 27);
 
-  // Assistant information
   doc.setTextColor(30, 41, 59);
   doc.setFontSize(11);
-
   doc.text(`Assistant: ${report.assistant}`, 15, 51);
   doc.text(`Reporting Period: ${monthLabel}`, 15, 59);
   doc.text(`Report ID: ${report.id}`, 15, 67);
 
-  // Summary
   doc.setFillColor(240, 246, 251);
   doc.roundedRect(15, 77, 180, 28, 3, 3, "F");
 
@@ -65,20 +50,25 @@ export function generateMonthlyReport(report: MonthlyReportData) {
 
   doc.setFontSize(20);
   doc.setTextColor(36, 91, 134);
-  doc.text(`${report.averageScore.toFixed(1)}%`, 22, 99);
+  doc.text(
+    report.averageScore === null
+      ? "N/A"
+      : `${report.averageScore.toFixed(1)}%`,
+    22,
+    99
+  );
 
   doc.setFontSize(10);
   doc.setTextColor(30, 41, 59);
   doc.text(`Evaluations: ${report.evaluationCount}`, 120, 94);
 
-  // KPI table
   autoTable(doc, {
     startY: 115,
     head: [["KPI Criterion", "Weight", "Performance"]],
-    body: criteria.map((criterion, index) => [
-      criterion.name,
-      `${criterion.weight}%`,
-      `${report.kpiScores[index] ?? 0}%`,
+    body: report.kpiScores.map((criterion) => [
+      criterion.criterionName,
+      `${criterion.averageWeight.toFixed(1)}%`,
+      `${criterion.averageScore.toFixed(1)}%`,
     ]),
     theme: "grid",
     headStyles: {
@@ -94,7 +84,6 @@ export function generateMonthlyReport(report: MonthlyReportData) {
     },
   });
 
-  // Observations
   const finalY =
     (doc as jsPDF & { lastAutoTable?: { finalY: number } })
       .lastAutoTable?.finalY ?? 115;
@@ -121,7 +110,7 @@ export function generateMonthlyReport(report: MonthlyReportData) {
         175
       );
 
-      if (observationY + 10 > 275) {
+      if (observationY + lines.length * 5 + 9 > 275) {
         doc.addPage();
         observationY = 20;
       }
@@ -131,7 +120,6 @@ export function generateMonthlyReport(report: MonthlyReportData) {
     });
   }
 
-  // Footer on every page
   const pageCount = doc.getNumberOfPages();
 
   for (let page = 1; page <= pageCount; page++) {

@@ -6,8 +6,22 @@ import { Eye, EyeOff, LockKeyhole, Mail, Stethoscope } from "lucide-react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
+import { apiRequest } from "../../services/api";
+import { useAuth } from "../../context/AuthContext";
 
 type Role = "dentist" | "admin" | "assistant";
+type ApiRole = "DENTIST" | "ADMIN" | "ASSISTANT";
+
+interface LoginResponse {
+  success: boolean;
+  message: string;
+  data: {
+    id: string;
+    fullName: string;
+    email: string;
+    roles: ApiRole[];
+  };
+}
 
 const roleConfig: Record<Role, { title: string; subtitle: string }> = {
   dentist: {
@@ -24,9 +38,16 @@ const roleConfig: Record<Role, { title: string; subtitle: string }> = {
   },
 };
 
+const roleMapping: Record<Role, ApiRole> = {
+  dentist: "DENTIST",
+  admin: "ADMIN",
+  assistant: "ASSISTANT",
+};
+
 export default function LoginPage() {
   const { role: roleParam } = useParams<{ role: string }>();
   const navigate = useNavigate();
+  const { refreshUser } = useAuth();
 
   const role = roleParam as Role;
   const config = roleConfig[role];
@@ -35,6 +56,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   if (!config) {
     return (
@@ -44,7 +66,7 @@ export default function LoginPage() {
     );
   }
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
@@ -53,9 +75,47 @@ export default function LoginPage() {
       return;
     }
 
-    // Temporary until backend authentication is implemented.
-    console.log({ email, password, role });
-    setError("Authentication is not connected yet.");
+    try {
+      setLoading(true);
+
+      const response = await apiRequest<LoginResponse>("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+
+      const expectedRole = roleMapping[role];
+
+      if (!response.data.roles.includes(expectedRole)) {
+        await apiRequest("/auth/logout", { method: "POST" });
+        setError("This account does not have access to this workspace.");
+        return;
+      }
+
+      const authenticatedUser = await refreshUser();
+
+      if (!authenticatedUser) {
+        setError("Could not retrieve your account. Please sign in again.");
+        return;
+      }
+
+      if (!authenticatedUser.roles.includes(expectedRole)) {
+        await apiRequest("/auth/logout", { method: "POST" });
+        await refreshUser();
+        setError("This account does not have access to this workspace.");
+        return;
+      }
+
+     navigate(
+  expectedRole === "ASSISTANT" ? "/my-performance" : "/dashboard",
+  { replace: true }
+);
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Login failed."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -136,8 +196,8 @@ export default function LoginPage() {
               </Link>
             </div>
 
-            <Button type="submit" block>
-              Sign in
+            <Button type="submit" block disabled={loading}>
+              {loading ? "Signing in..." : "Sign in"}
             </Button>
           </form>
 

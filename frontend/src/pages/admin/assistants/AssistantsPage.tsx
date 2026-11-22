@@ -1,8 +1,7 @@
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   Search,
-  Users,
   UserPlus,
   Pencil,
   Power,
@@ -13,6 +12,7 @@ import {
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Badge from "../../../components/ui/Badge";
+import { apiRequest } from "../../../services/api";
 
 type AssistantStatus = "ACTIVE" | "INACTIVE" | "DELETED";
 
@@ -25,41 +25,28 @@ interface Assistant {
   createdAt: string;
 }
 
-const initialAssistants: Assistant[] = [
-  {
-    id: "A001",
-    name: "Meriem Ali",
-    email: "meriem@clinic.com",
-    phone: "0550123456",
-    status: "ACTIVE",
-    createdAt: "2026-09-10",
-  },
-  {
-    id: "A002",
-    name: "Nadia Benali",
-    email: "nadia@clinic.com",
-    phone: "0660123456",
-    status: "ACTIVE",
-    createdAt: "2026-09-15",
-  },
-  {
-    id: "A003",
-    name: "Lina Karim",
-    email: "lina@clinic.com",
-    phone: "0770123456",
-    status: "INACTIVE",
-    createdAt: "2026-10-01",
-  },
-];
+interface ApiAssistant {
+  id: string;
+  fullName: string;
+  email: string;
+  phone: string | null;
+  status: AssistantStatus;
+  createdAt: string;
+}
+
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
 
 function AssistantsPage() {
-  const [assistants, setAssistants] = useState(initialAssistants);
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
   const [search, setSearch] = useState("");
 
   const [formOpen, setFormOpen] = useState(false);
   const [editingAssistant, setEditingAssistant] =
     useState<Assistant | null>(null);
-
   const [deleteTarget, setDeleteTarget] =
     useState<Assistant | null>(null);
 
@@ -67,7 +54,45 @@ function AssistantsPage() {
     name: "",
     email: "",
     phone: "",
+    password: "",
   });
+
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+
+  async function loadAssistants() {
+    try {
+      setError("");
+
+      const response = await apiRequest<ApiResponse<ApiAssistant[]>>(
+        "/assistants"
+      );
+
+      setAssistants(
+        response.data.map((assistant) => ({
+          id: assistant.id,
+          name: assistant.fullName,
+          email: assistant.email,
+          phone: assistant.phone || "",
+          status: assistant.status,
+          createdAt: assistant.createdAt,
+        }))
+      );
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to load assistants."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAssistants();
+  }, []);
 
   const activeCount = assistants.filter(
     (assistant) => assistant.status === "ACTIVE"
@@ -89,7 +114,13 @@ function AssistantsPage() {
 
   function openAddForm() {
     setEditingAssistant(null);
-    setFormData({ name: "", email: "", phone: "" });
+    setFormData({
+      name: "",
+      email: "",
+      phone: "",
+      password: "",
+    });
+    setError("");
     setFormOpen(true);
   }
 
@@ -99,79 +130,113 @@ function AssistantsPage() {
       name: assistant.name,
       email: assistant.email,
       phone: assistant.phone,
+      password: "",
     });
+    setError("");
     setFormOpen(true);
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const name = formData.name.trim();
     const email = formData.email.trim().toLowerCase();
     const phone = formData.phone.trim();
 
-    const duplicateEmail = assistants.some(
-      (assistant) =>
-        assistant.email.toLowerCase() === email &&
-        assistant.id !== editingAssistant?.id &&
-        assistant.status !== "DELETED"
-    );
-
-    if (duplicateEmail) {
-      alert("An assistant with this email already exists.");
+    if (!editingAssistant && formData.password.length < 8) {
+      setError("Password must contain at least 8 characters.");
       return;
     }
 
-    if (editingAssistant) {
-      setAssistants((previous) =>
-        previous.map((assistant) =>
-          assistant.id === editingAssistant.id
-            ? { ...assistant, name, email, phone }
-            : assistant
-        )
+    try {
+      setSubmitting(true);
+      setError("");
+
+      if (editingAssistant) {
+        await apiRequest<ApiResponse<ApiAssistant>>(
+          `/assistants/${editingAssistant.id}`,
+          {
+            method: "PATCH",
+            body: JSON.stringify({
+              fullName: name,
+              email,
+              phone: phone || undefined,
+            }),
+          }
+        );
+      } else {
+        await apiRequest<ApiResponse<ApiAssistant>>("/assistants", {
+          method: "POST",
+          body: JSON.stringify({
+            fullName: name,
+            email,
+            phone: phone || undefined,
+            password: formData.password,
+          }),
+        });
+      }
+
+      setFormOpen(false);
+      await loadAssistants();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to save assistant."
       );
-    } else {
-      const newAssistant: Assistant = {
-        id: `A${Date.now()}`,
-        name,
-        email,
-        phone,
-        status: "ACTIVE",
-        createdAt: new Date().toISOString().slice(0, 10),
-      };
-
-      setAssistants((previous) => [...previous, newAssistant]);
+    } finally {
+      setSubmitting(false);
     }
-
-    setFormOpen(false);
   }
 
-  function toggleStatus(assistantId: string) {
-    setAssistants((previous) =>
-      previous.map((assistant) =>
-        assistant.id === assistantId
-          ? {
-              ...assistant,
-              status:
-                assistant.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
-            }
-          : assistant
-      )
-    );
+  async function changeStatus(
+    assistantId: string,
+    action: "ACTIVATE" | "DEACTIVATE"
+  ) {
+    try {
+      setError("");
+
+      await apiRequest<ApiResponse<ApiAssistant>>(
+        `/assistants/${assistantId}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ action }),
+        }
+      );
+
+      await loadAssistants();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to update assistant status."
+      );
+    }
   }
 
-  function confirmDelete() {
+  async function confirmDelete() {
     if (!deleteTarget) return;
 
-    setAssistants((previous) =>
-      previous.map((assistant) =>
-        assistant.id === deleteTarget.id
-          ? { ...assistant, status: "DELETED" }
-          : assistant
-      )
-    );
+    try {
+      setError("");
 
-    setDeleteTarget(null);
+      await apiRequest<ApiResponse<ApiAssistant>>(
+        `/assistants/${deleteTarget.id}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ action: "ARCHIVE" }),
+        }
+      );
+
+      setDeleteTarget(null);
+      await loadAssistants();
+    } catch (error) {
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Failed to archive assistant."
+      );
+    }
   }
 
   function getStatusVariant(status: AssistantStatus) {
@@ -182,7 +247,6 @@ function AssistantsPage() {
 
   return (
     <div className="space-y-6">
-
       {/* Heading */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -199,6 +263,12 @@ function AssistantsPage() {
           Add Assistant
         </Button>
       </div>
+
+      {error && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
 
       {/* Statistics */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -286,7 +356,7 @@ function AssistantsPage() {
                     </td>
 
                     <td className="py-4 text-sm text-text-muted">
-                      {assistant.createdAt}
+                      {new Date(assistant.createdAt).toLocaleDateString()}
                     </td>
 
                     <td className="py-4">
@@ -310,7 +380,14 @@ function AssistantsPage() {
                             <Button
                               size="sm"
                               variant="outline"
-                              onClick={() => toggleStatus(assistant.id)}
+                              onClick={() =>
+                                changeStatus(
+                                  assistant.id,
+                                  assistant.status === "ACTIVE"
+                                    ? "DEACTIVATE"
+                                    : "ACTIVATE"
+                                )
+                              }
                             >
                               <Power size={14} />
                             </Button>
@@ -332,7 +409,13 @@ function AssistantsPage() {
             </tbody>
           </table>
 
-          {filteredAssistants.length === 0 && (
+          {loading && (
+            <p className="py-8 text-center text-sm text-text-muted">
+              Loading assistants...
+            </p>
+          )}
+
+          {!loading && filteredAssistants.length === 0 && (
             <p className="py-8 text-center text-sm text-text-muted">
               No assistants found.
             </p>
@@ -409,17 +492,45 @@ function AssistantsPage() {
                 />
               </div>
 
+              {!editingAssistant && (
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-text-main">
+                    Initial Password
+                  </label>
+                  <input
+                    required
+                    type="password"
+                    minLength={8}
+                    maxLength={128}
+                    value={formData.password}
+                    onChange={(event) =>
+                      setFormData({
+                        ...formData,
+                        password: event.target.value,
+                      })
+                    }
+                    placeholder="At least 8 characters"
+                    className="w-full rounded-control border border-border px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </div>
+              )}
+
               <div className="flex justify-end gap-3 pt-3">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => setFormOpen(false)}
+                  disabled={submitting}
                 >
                   Cancel
                 </Button>
 
-                <Button type="submit">
-                  {editingAssistant ? "Save Changes" : "Create Assistant"}
+                <Button type="submit" disabled={submitting}>
+                  {submitting
+                    ? "Saving..."
+                    : editingAssistant
+                      ? "Save Changes"
+                      : "Create Assistant"}
                 </Button>
               </div>
             </form>
@@ -427,7 +538,7 @@ function AssistantsPage() {
         </div>
       )}
 
-      {/* Delete confirmation */}
+      {/* Archive confirmation */}
       {deleteTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
           <Card padding="lg" className="w-full max-w-md">

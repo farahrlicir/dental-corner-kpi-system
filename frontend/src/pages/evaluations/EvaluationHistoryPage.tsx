@@ -1,83 +1,107 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Eye, ClipboardList, Search, X } from "lucide-react";
 
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Badge from "../../components/ui/Badge";
+import { apiRequest } from "../../services/api";
 
-const evaluations = [
-  {
-    id: "EV-001",
-    assistant: "Sarah Ahmed",
-    assistantId: "1",
-    date: "2026-11-05",
-    score: 91.2,
-    observation:
-      "Handled an emergency appointment efficiently and maintained excellent patient communication.",
-    ratings: [5, 4, 5, 4, 5, 4, 5, 5, 4, 5, 4, 5],
-  },
-  {
-    id: "EV-002",
-    assistant: "Amine Benali",
-    assistantId: "2",
-    date: "2026-11-08",
-    score: 84.6,
-    observation:
-      "Good overall performance. Room preparation could be more consistent.",
-    ratings: [4, 4, 4, 3, 5, 4, 4, 5, 4, 4, 3, 5],
-  },
-  {
-    id: "EV-003",
-    assistant: "Sarah Ahmed",
-    assistantId: "1",
-    date: "2026-11-12",
-    score: 94.1,
-    observation: "Excellent teamwork and patient care.",
-    ratings: [5, 5, 5, 4, 5, 5, 5, 5, 4, 5, 4, 5],
-  },
-  {
-    id: "EV-004",
-    assistant: "Lina Mansouri",
-    assistantId: "3",
-    date: "2026-10-20",
-    score: 78.5,
-    observation: "",
-    ratings: [3, 4, 4, 3, 4, 4, 3, 5, 4, 3, 4, 4],
-  },
-];
+interface EvaluationItem {
+  id: string;
+  rating: number;
+  score: number | string;
+  configurationItem: {
+    criterionName: string;
+    weight: number | string;
+    displayOrder: number;
+  };
+}
 
-const criteria = [
-  "Room Turnover Time",
-  "On-Time Seating Rate",
-  "Chart Prep Completion",
-  "Lab Case Tracking",
-  "X-Ray & Image Quality",
-  "Post-Op Call Success",
-  "Ready-to-Work Punctuality",
-  "Uniform & Hygiene Standards",
-  "Overtime Management",
-  "Emergency & Late Flexibility",
-  "In-Chair Waiting Time",
-  "Patient Comfort & Tone",
-];
+interface Evaluation {
+  id: string;
+  assistantId: string;
+  overallScore: number | string;
+  observation: string | null;
+  submittedAt: string;
+  assistant: {
+    user: {
+      fullName: string;
+    };
+  };
+  configuration: {
+    version: number;
+  };
+  items: EvaluationItem[];
+}
+
+interface EvaluationHistoryResponse {
+  success: boolean;
+  data: Evaluation[];
+}
 
 export default function EvaluationHistoryPage() {
+  const [evaluations, setEvaluations] = useState<Evaluation[]>([]);
   const [search, setSearch] = useState("");
   const [assistantFilter, setAssistantFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
   const [selectedEvaluation, setSelectedEvaluation] =
-    useState<(typeof evaluations)[number] | null>(null);
+    useState<Evaluation | null>(null);
 
-  const assistants = [
-    { id: "1", name: "Sarah Ahmed" },
-    { id: "2", name: "Amine Benali" },
-    { id: "3", name: "Lina Mansouri" },
-  ];
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const months = [
-    ...new Set(evaluations.map((item) => item.date.slice(0, 7))),
-  ];
+  useEffect(() => {
+    const fetchEvaluations = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response =
+          await apiRequest<EvaluationHistoryResponse>(
+            "/evaluations/history"
+          );
+
+        setEvaluations(response.data);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to retrieve evaluation history."
+        );
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchEvaluations();
+  }, []);
+
+  const assistants = useMemo(() => {
+    const uniqueAssistants = new Map<string, string>();
+
+    evaluations.forEach((evaluation) => {
+      uniqueAssistants.set(
+        evaluation.assistantId,
+        evaluation.assistant.user.fullName
+      );
+    });
+
+    return Array.from(uniqueAssistants, ([id, name]) => ({
+      id,
+      name,
+    }));
+  }, [evaluations]);
+
+  const months = useMemo(() => {
+    return [
+      ...new Set(
+        evaluations.map((item) =>
+          item.submittedAt.slice(0, 7)
+        )
+      ),
+    ].sort((a, b) => b.localeCompare(a));
+  }, [evaluations]);
 
   const filteredEvaluations = useMemo(() => {
     return evaluations.filter((evaluation) => {
@@ -87,28 +111,61 @@ export default function EvaluationHistoryPage() {
 
       const matchesMonth =
         monthFilter === "all" ||
-        evaluation.date.startsWith(monthFilter);
+        evaluation.submittedAt.startsWith(monthFilter);
 
-      const matchesSearch = evaluation.assistant
+      const matchesSearch = evaluation.assistant.user.fullName
         .toLowerCase()
         .includes(search.toLowerCase());
 
-      return matchesAssistant && matchesMonth && matchesSearch;
+      return (
+        matchesAssistant &&
+        matchesMonth &&
+        matchesSearch
+      );
     });
-  }, [search, assistantFilter, monthFilter]);
+  }, [evaluations, search, assistantFilter, monthFilter]);
 
   const formatDate = (date: string) =>
-    new Date(`${date}T00:00:00`).toLocaleDateString("en-GB", {
+    new Date(date).toLocaleDateString("en-GB", {
       day: "2-digit",
       month: "short",
       year: "numeric",
     });
 
   const formatMonth = (month: string) =>
-    new Date(`${month}-01T00:00:00`).toLocaleDateString("en-GB", {
-      month: "long",
-      year: "numeric",
-    });
+    new Date(`${month}-01T00:00:00`).toLocaleDateString(
+      "en-GB",
+      {
+        month: "long",
+        year: "numeric",
+      }
+    );
+
+  const getScore = (evaluation: Evaluation) =>
+    Number(evaluation.overallScore);
+
+  const averageScore = filteredEvaluations.length
+    ? filteredEvaluations.reduce(
+        (sum, item) => sum + getScore(item),
+        0
+      ) / filteredEvaluations.length
+    : null;
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-sm text-slate-500">
+        Loading evaluation history...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card padding="lg">
+        <p className="text-sm text-red-600">{error}</p>
+      </Card>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -129,7 +186,9 @@ export default function EvaluationHistoryPage() {
               <ClipboardList size={21} />
             </div>
             <div>
-              <p className="text-sm text-slate-500">Total Evaluations</p>
+              <p className="text-sm text-slate-500">
+                Total Evaluations
+              </p>
               <p className="text-2xl font-bold text-slate-800">
                 {evaluations.length}
               </p>
@@ -138,22 +197,21 @@ export default function EvaluationHistoryPage() {
         </Card>
 
         <Card padding="md">
-          <p className="text-sm text-slate-500">Filtered Results</p>
+          <p className="text-sm text-slate-500">
+            Filtered Results
+          </p>
           <p className="mt-1 text-2xl font-bold text-slate-800">
             {filteredEvaluations.length}
           </p>
         </Card>
 
         <Card padding="md">
-          <p className="text-sm text-slate-500">Average Score</p>
+          <p className="text-sm text-slate-500">
+            Average Score
+          </p>
           <p className="mt-1 text-2xl font-bold text-slate-800">
-            {filteredEvaluations.length
-              ? (
-                  filteredEvaluations.reduce(
-                    (sum, item) => sum + item.score,
-                    0
-                  ) / filteredEvaluations.length
-                ).toFixed(1) + "%"
+            {averageScore !== null
+              ? `${averageScore.toFixed(1)}%`
               : "—"}
           </p>
         </Card>
@@ -217,50 +275,62 @@ export default function EvaluationHistoryPage() {
                 <th className="pb-3 font-medium">Assistant</th>
                 <th className="pb-3 font-medium">Date</th>
                 <th className="pb-3 font-medium">Final Score</th>
-                <th className="pb-3 text-right font-medium">Action</th>
+                <th className="pb-3 text-right font-medium">
+                  Action
+                </th>
               </tr>
             </thead>
 
             <tbody>
-              {filteredEvaluations.map((evaluation) => (
-                <tr
-                  key={evaluation.id}
-                  className="border-b border-slate-50 last:border-0"
-                >
-                  <td className="py-4 font-medium text-slate-700">
-                    {evaluation.id}
-                  </td>
-                  <td className="py-4 text-slate-700">
-                    {evaluation.assistant}
-                  </td>
-                  <td className="py-4 text-slate-500">
-                    {formatDate(evaluation.date)}
-                  </td>
-                  <td className="py-4">
-                    <Badge
-                      variant={
-                        evaluation.score >= 90
-                          ? "success"
-                          : evaluation.score >= 80
-                            ? "info"
-                            : "warning"
-                      }
-                    >
-                      {evaluation.score.toFixed(1)}%
-                    </Badge>
-                  </td>
-                  <td className="py-4 text-right">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setSelectedEvaluation(evaluation)}
-                    >
-                      <Eye size={15} />
-                      View
-                    </Button>
-                  </td>
-                </tr>
-              ))}
+              {filteredEvaluations.map((evaluation) => {
+                const score = getScore(evaluation);
+
+                return (
+                  <tr
+                    key={evaluation.id}
+                    className="border-b border-slate-50 last:border-0"
+                  >
+                    <td className="py-4 font-medium text-slate-700">
+                      {evaluation.id.slice(0, 8)}
+                    </td>
+
+                    <td className="py-4 text-slate-700">
+                      {evaluation.assistant.user.fullName}
+                    </td>
+
+                    <td className="py-4 text-slate-500">
+                      {formatDate(evaluation.submittedAt)}
+                    </td>
+
+                    <td className="py-4">
+                      <Badge
+                        variant={
+                          score >= 90
+                            ? "success"
+                            : score >= 80
+                              ? "info"
+                              : "warning"
+                        }
+                      >
+                        {score.toFixed(1)}%
+                      </Badge>
+                    </td>
+
+                    <td className="py-4 text-right">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setSelectedEvaluation(evaluation)
+                        }
+                      >
+                        <Eye size={15} />
+                        View
+                      </Button>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {filteredEvaluations.length === 0 && (
                 <tr>
@@ -287,7 +357,12 @@ export default function EvaluationHistoryPage() {
                   Evaluation Details
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  {selectedEvaluation.id} · {selectedEvaluation.assistant}
+                  {selectedEvaluation.id} ·{" "}
+                  {selectedEvaluation.assistant.user.fullName}
+                </p>
+                <p className="mt-1 text-xs text-slate-400">
+                  KPI Configuration v
+                  {selectedEvaluation.configuration.version}
                 </p>
               </div>
 
@@ -302,16 +377,20 @@ export default function EvaluationHistoryPage() {
 
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-lg bg-slate-50 p-4">
               <div>
-                <p className="text-xs text-slate-500">Submission date</p>
+                <p className="text-xs text-slate-500">
+                  Submission date
+                </p>
                 <p className="mt-1 font-medium text-slate-700">
-                  {formatDate(selectedEvaluation.date)}
+                  {formatDate(selectedEvaluation.submittedAt)}
                 </p>
               </div>
 
               <div>
-                <p className="text-xs text-slate-500">Final score</p>
+                <p className="text-xs text-slate-500">
+                  Final score
+                </p>
                 <p className="mt-1 text-xl font-bold text-blue-700">
-                  {selectedEvaluation.score.toFixed(1)}%
+                  {getScore(selectedEvaluation).toFixed(1)}%
                 </p>
               </div>
             </div>
@@ -321,19 +400,35 @@ export default function EvaluationHistoryPage() {
             </h3>
 
             <div className="space-y-3">
-              {criteria.map((criterion, index) => (
-                <div
-                  key={criterion}
-                  className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3"
-                >
-                  <p className="text-sm text-slate-700">
-                    {criterion}
-                  </p>
-                  <Badge variant="info">
-                    {selectedEvaluation.ratings[index]}/5
-                  </Badge>
-                </div>
-              ))}
+              {[...selectedEvaluation.items]
+                .sort(
+                  (a, b) =>
+                    a.configurationItem.displayOrder -
+                    b.configurationItem.displayOrder
+                )
+                .map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3"
+                  >
+                    <div>
+                      <p className="text-sm text-slate-700">
+                        {item.configurationItem.criterionName}
+                      </p>
+                      <p className="text-xs text-slate-400">
+                        Weight:{" "}
+                        {Number(
+                          item.configurationItem.weight
+                        ).toFixed(1)}
+                        %
+                      </p>
+                    </div>
+
+                    <Badge variant="info">
+                      {item.rating}/5
+                    </Badge>
+                  </div>
+                ))}
             </div>
 
             <div className="mt-5 rounded-lg border border-slate-200 p-4">

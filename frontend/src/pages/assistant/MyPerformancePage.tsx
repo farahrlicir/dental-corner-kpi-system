@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   CalendarDays,
   ClipboardList,
@@ -12,12 +12,25 @@ import {
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
 import Button from "../../components/ui/Button";
+import { apiRequest } from "../../services/api";
 import { generateMonthlyReport } from "../../utils/generateMonthlyReport";
 
-type KPIResult = {
-  name: string;
-  score: number;
-  weight: number;
+type ApiKpiScore = {
+  id: string;
+  criterionName: string;
+  averageWeight: number | string;
+  averageScore: number | string;
+};
+
+type ApiMonthlyReport = {
+  id: string;
+  year: number;
+  month: number;
+  overallScore: number | string | null;
+  evaluationCount: number;
+  status: "FINALIZED" | "DRAFT";
+  kpiScores: ApiKpiScore[];
+  observations?: string[];
 };
 
 type MonthlyReport = {
@@ -27,66 +40,13 @@ type MonthlyReport = {
   evaluationCount: number;
   averageScore: number;
   status: "FINALIZED" | "DRAFT";
-  kpiScores: KPIResult[];
+  kpiScores: {
+    name: string;
+    score: number;
+    weight: number;
+  }[];
   observations: string[];
 };
-
-// Temporary mock data.
-// The backend will later return only the logged-in assistant's reports.
-const mockReports: MonthlyReport[] = [
-  {
-    id: "RPT-001",
-    assistant: "Sarah Ahmed",
-    month: "2026-11",
-    evaluationCount: 5,
-    averageScore: 92.4,
-    status: "FINALIZED",
-    kpiScores: [
-      { name: "Room Turnover Time", score: 95, weight: 10 },
-      { name: "On-Time Seating Rate", score: 90, weight: 8 },
-      { name: "Chart Prep Completion", score: 100, weight: 10 },
-      { name: "Lab Case Tracking", score: 90, weight: 8 },
-      { name: "X-Ray & Image Quality", score: 95, weight: 10 },
-      { name: "Post-Op Call Success", score: 90, weight: 9 },
-      { name: "Ready-to-Work Punctuality", score: 100, weight: 7 },
-      { name: "Uniform & Hygiene Standards", score: 95, weight: 8 },
-      { name: "Overtime Management", score: 90, weight: 4 },
-      { name: "Emergency & Late Flexibility", score: 85, weight: 6 },
-      { name: "In-Chair Waiting Time", score: 90, weight: 8 },
-      { name: "Patient Comfort & Tone", score: 95, weight: 12 },
-    ],
-    observations: [
-      "Consistently demonstrates excellent preparation and organization.",
-      "Maintains a professional and welcoming attitude with patients.",
-    ],
-  },
-  {
-    id: "RPT-002",
-    assistant: "Sarah Ahmed",
-    month: "2026-10",
-    evaluationCount: 6,
-    averageScore: 88.2,
-    status: "FINALIZED",
-    kpiScores: [
-      { name: "Room Turnover Time", score: 90, weight: 10 },
-      { name: "On-Time Seating Rate", score: 85, weight: 8 },
-      { name: "Chart Prep Completion", score: 95, weight: 10 },
-      { name: "Lab Case Tracking", score: 85, weight: 8 },
-      { name: "X-Ray & Image Quality", score: 90, weight: 10 },
-      { name: "Post-Op Call Success", score: 85, weight: 9 },
-      { name: "Ready-to-Work Punctuality", score: 90, weight: 7 },
-      { name: "Uniform & Hygiene Standards", score: 95, weight: 8 },
-      { name: "Overtime Management", score: 85, weight: 4 },
-      { name: "Emergency & Late Flexibility", score: 80, weight: 6 },
-      { name: "In-Chair Waiting Time", score: 85, weight: 8 },
-      { name: "Patient Comfort & Tone", score: 90, weight: 12 },
-    ],
-    observations: [
-      "Good teamwork and patient communication.",
-      "Could improve responsiveness during emergency scheduling.",
-    ],
-  },
-];
 
 const formatMonth = (month: string) =>
   new Date(`${month}-01T00:00:00`).toLocaleDateString("en-US", {
@@ -102,27 +62,140 @@ const getScoreVariant = (score: number) => {
 };
 
 export default function MyPerformancePage() {
-  const [selectedMonth, setSelectedMonth] = useState(mockReports[0].month);
+  const [reports, setReports] = useState<MonthlyReport[]>([]);
+  const [selectedMonth, setSelectedMonth] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
 
-  const reports = useMemo(
-    () => mockReports.filter((report) => report.status === "FINALIZED"),
-    []
+  useEffect(() => {
+    let active = true;
+
+    const fetchReports = async () => {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response = await apiRequest<{
+          success: boolean;
+          data: ApiMonthlyReport[];
+        }>("/assistant-reports/my-reports");
+
+        if (!active) return;
+
+        const mappedReports: MonthlyReport[] = response.data.map((report) => ({
+          id: report.id,
+          assistant: "My Performance",
+          month: `${report.year}-${String(report.month).padStart(2, "0")}`,
+          evaluationCount: report.evaluationCount,
+          averageScore:
+            report.overallScore === null
+              ? 0
+              : Number(report.overallScore),
+          status: report.status,
+          kpiScores: report.kpiScores.map((kpi) => ({
+            name: kpi.criterionName,
+            score: Number(kpi.averageScore),
+            weight: Number(kpi.averageWeight),
+          })),
+          observations: report.observations ?? [],
+        }));
+
+        setReports(mappedReports);
+
+        if (mappedReports.length > 0) {
+          setSelectedMonth(mappedReports[0].month);
+        }
+      } catch (err) {
+        if (active) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load your performance reports."
+          );
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    };
+
+    fetchReports();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const selectedReport = useMemo(
+    () => reports.find((report) => report.month === selectedMonth) ?? null,
+    [reports, selectedMonth]
   );
 
-  const selectedReport =
-    reports.find((report) => report.month === selectedMonth) ?? reports[0];
+  const previousReport = useMemo(() => {
+    if (!selectedReport) return null;
 
-  const previousReport = reports.find(
-    (report) => report.month < selectedReport.month
-  );
+    return reports.find(
+      (report) => report.month < selectedReport.month
+    ) ?? null;
+  }, [reports, selectedReport]);
 
-  const scoreDifference = previousReport
-    ? selectedReport.averageScore - previousReport.averageScore
-    : null;
+  const scoreDifference =
+    selectedReport && previousReport
+      ? selectedReport.averageScore - previousReport.averageScore
+      : null;
 
   const downloadReport = () => {
+    if (!selectedReport) return;
     generateMonthlyReport(selectedReport);
   };
+
+  if (loading) {
+    return (
+      <div className="py-12 text-center text-sm text-slate-500">
+        Loading your performance reports...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card padding="lg">
+        <p className="text-sm text-red-600">{error}</p>
+      </Card>
+    );
+  }
+
+  if (reports.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">
+            My Performance
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Review your monthly performance and evaluation results.
+          </p>
+        </div>
+
+        <Card padding="lg">
+          <div className="py-8 text-center">
+            <ClipboardList
+              size={36}
+              className="mx-auto mb-3 text-slate-300"
+            />
+            <h2 className="font-semibold text-slate-700">
+              No finalized reports yet
+            </h2>
+            <p className="mt-2 text-sm text-slate-500">
+              Your monthly performance reports will appear here once they
+              have been finalized by the administrator.
+            </p>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  if (!selectedReport) return null;
 
   return (
     <div className="space-y-6">
@@ -238,32 +311,38 @@ export default function MyPerformancePage() {
           </p>
         </div>
 
-        <div className="space-y-5">
-          {selectedReport.kpiScores.map((kpi) => (
-            <div key={kpi.name}>
-              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-sm font-medium text-slate-700">
-                  {kpi.name}
-                </span>
-                <div className="flex items-center gap-3">
-                  <span className="text-xs text-slate-400">
-                    Weight: {kpi.weight}%
+        {selectedReport.kpiScores.length > 0 ? (
+          <div className="space-y-5">
+            {selectedReport.kpiScores.map((kpi) => (
+              <div key={kpi.name}>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-700">
+                    {kpi.name}
                   </span>
-                  <span className="text-sm font-semibold text-slate-800">
-                    {kpi.score}%
-                  </span>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400">
+                      Weight: {kpi.weight}%
+                    </span>
+                    <span className="text-sm font-semibold text-slate-800">
+                      {kpi.score.toFixed(1)}%
+                    </span>
+                  </div>
+                </div>
+
+                <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className="h-full rounded-full bg-blue-600 transition-all"
+                    style={{ width: `${kpi.score}%` }}
+                  />
                 </div>
               </div>
-
-              <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-                <div
-                  className="h-full rounded-full bg-blue-600 transition-all"
-                  style={{ width: `${kpi.score}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-sm text-slate-500">
+            No KPI scores are available for this report.
+          </p>
+        )}
       </Card>
 
       {/* Observations */}

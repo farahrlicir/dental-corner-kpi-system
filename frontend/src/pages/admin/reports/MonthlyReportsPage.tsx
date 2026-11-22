@@ -1,5 +1,5 @@
 
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileText,
   Download,
@@ -8,90 +8,130 @@ import {
   X,
   TrendingUp,
   ClipboardList,
+  RefreshCw,
 } from "lucide-react";
 
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Badge from "../../../components/ui/Badge";
+import { apiRequest } from "../../../services/api";
 import { generateMonthlyReport } from "../../../utils/generateMonthlyReport";
 
-const criteria = [
-  { id: "1", name: "Room Turnover Time", weight: 10 },
-  { id: "2", name: "On-Time Seating Rate", weight: 8 },
-  { id: "3", name: "Chart Prep Completion", weight: 10 },
-  { id: "4", name: "Lab Case Tracking", weight: 8 },
-  { id: "5", name: "X-Ray & Image Quality", weight: 10 },
-  { id: "6", name: "Post-Op Call Success", weight: 9 },
-  { id: "7", name: "Ready-to-Work Punctuality", weight: 7 },
-  { id: "8", name: "Uniform & Hygiene Standards", weight: 8 },
-  { id: "9", name: "Overtime Management", weight: 4 },
-  { id: "10", name: "Emergency & Late Flexibility", weight: 6 },
-  { id: "11", name: "In-Chair Waiting Time", weight: 8 },
-  { id: "12", name: "Patient Comfort & Tone", weight: 12 },
-];
+interface KpiScore {
+  id: string;
+  criterionName: string;
+  averageWeight: number | string;
+  averageScore: number | string;
+}
 
-const reports = [
-  {
-    id: "RPT-001",
-    assistantId: "1",
-    assistant: "Sarah Ahmed",
-    month: "2026-11",
-    evaluationCount: 5,
-    averageScore: 92.4,
-    status: "FINALIZED",
-    kpiScores: [95, 90, 95, 85, 95, 90, 95, 100, 85, 95, 90, 95],
-    observations: [
-      "Handled an emergency appointment efficiently.",
-      "Excellent teamwork and patient communication.",
-      "Maintained high hygiene standards.",
-    ],
-  },
-  {
-    id: "RPT-002",
-    assistantId: "2",
-    assistant: "Amine Benali",
-    month: "2026-11",
-    evaluationCount: 4,
-    averageScore: 84.6,
-    status: "DRAFT",
-    kpiScores: [80, 85, 85, 80, 95, 85, 80, 95, 80, 85, 75, 95],
-    observations: [
-      "Room preparation could be more consistent.",
-      "Good patient interaction overall.",
-    ],
-  },
-  {
-    id: "RPT-003",
-    assistantId: "3",
-    assistant: "Lina Mansouri",
-    month: "2026-10",
-    evaluationCount: 6,
-    averageScore: 78.5,
-    status: "FINALIZED",
-    kpiScores: [75, 80, 80, 75, 85, 80, 75, 95, 80, 75, 80, 85],
-    observations: [
-      "Should improve room preparation time.",
-      "Good hygiene and patient comfort.",
-    ],
-  },
-];
+interface MonthlyReport {
+  id: string;
+  assistantId: string;
+  year: number;
+  month: number;
+  overallScore: number | string | null;
+  evaluationCount: number;
+  status: "DRAFT" | "FINALIZED";
+  assistant: {
+    user: {
+      fullName: string;
+    };
+  };
+  kpiScores: KpiScore[];
+  observations: string[];
+}
 
-type MonthlyReport = (typeof reports)[number];
+interface ApiResponse<T> {
+  success: boolean;
+  data: T;
+  message?: string;
+}
 
 export default function MonthlyReportsPage() {
+  const [reports, setReports] = useState<MonthlyReport[]>([]);
   const [search, setSearch] = useState("");
   const [assistantFilter, setAssistantFilter] = useState("all");
   const [monthFilter, setMonthFilter] = useState("all");
   const [selectedReport, setSelectedReport] =
     useState<MonthlyReport | null>(null);
 
-  const assistants = [
-    { id: "1", name: "Sarah Ahmed" },
-    { id: "2", name: "Amine Benali" },
-    { id: "3", name: "Lina Mansouri" },
-  ];
+  const previousMonth = new Date();
+  previousMonth.setMonth(previousMonth.getMonth() - 1);
 
-  const months = [...new Set(reports.map((report) => report.month))];
+  const [generationMonth, setGenerationMonth] = useState(
+    `${previousMonth.getFullYear()}-${String(
+      previousMonth.getMonth() + 1
+    ).padStart(2, "0")}`
+  );
+
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  const formatMonth = (month: string) =>
+    new Date(`${month}-01T00:00:00`).toLocaleDateString("en-GB", {
+      month: "long",
+      year: "numeric",
+    });
+
+  const getReportMonth = (report: MonthlyReport) =>
+    `${report.year}-${String(report.month).padStart(2, "0")}`;
+
+  const getScore = (score: number | string | null) =>
+    score === null ? null : Number(score);
+
+  const statusVariant = (status: string) =>
+    status === "FINALIZED" ? "success" : "warning";
+
+  const fetchReports = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError("");
+
+      const response = await apiRequest<ApiResponse<MonthlyReport[]>>(
+        "/monthly-reports"
+      );
+
+      setReports(response.data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to retrieve monthly reports."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchReports();
+  }, [fetchReports]);
+
+  const assistants = useMemo(() => {
+    const uniqueAssistants = new Map<string, string>();
+
+    reports.forEach((report) => {
+      uniqueAssistants.set(
+        report.assistantId,
+        report.assistant.user.fullName
+      );
+    });
+
+    return Array.from(uniqueAssistants, ([id, name]) => ({
+      id,
+      name,
+    }));
+  }, [reports]);
+
+  const months = useMemo(
+    () =>
+      Array.from(
+        new Set(reports.map((report) => getReportMonth(report)))
+      ).sort((a, b) => b.localeCompare(a)),
+    [reports]
+  );
 
   const filteredReports = useMemo(() => {
     return reports.filter((report) => {
@@ -100,50 +140,163 @@ export default function MonthlyReportsPage() {
         report.assistantId === assistantFilter;
 
       const matchesMonth =
-        monthFilter === "all" || report.month === monthFilter;
+        monthFilter === "all" ||
+        getReportMonth(report) === monthFilter;
 
-      const matchesSearch = report.assistant
+      const matchesSearch = report.assistant.user.fullName
         .toLowerCase()
         .includes(search.toLowerCase());
 
       return matchesAssistant && matchesMonth && matchesSearch;
     });
-  }, [search, assistantFilter, monthFilter]);
+  }, [reports, search, assistantFilter, monthFilter]);
 
-  const averageScore = filteredReports.length
-    ? filteredReports.reduce(
-        (sum, report) => sum + report.averageScore,
+  const finalizedCount = reports.filter(
+    (report) => report.status === "FINALIZED"
+  ).length;
+
+  const scoredReports = filteredReports.filter(
+    (report) => getScore(report.overallScore) !== null
+  );
+
+  const averageScore = scoredReports.length
+    ? scoredReports.reduce(
+        (sum, report) => sum + Number(report.overallScore),
         0
-      ) / filteredReports.length
+      ) / scoredReports.length
     : 0;
 
-  const formatMonth = (month: string) =>
-    new Date(`${month}-01T00:00:00`).toLocaleDateString("en-GB", {
-      month: "long",
-      year: "numeric",
-    });
+  const generateReports = async () => {
+    if (!generationMonth) return;
 
-  const statusVariant = (status: string) =>
-    status === "FINALIZED" ? "success" : "warning";
+    const [year, month] = generationMonth.split("-").map(Number);
+
+    try {
+      setActionLoading(true);
+      setError("");
+      setSuccess("");
+
+      const response = await apiRequest<ApiResponse<{
+        generated: number;
+        updated: number;
+        skipped: number;
+      }>>("/monthly-reports/generate", {
+        method: "POST",
+        body: JSON.stringify({ year, month }),
+      });
+
+      setSuccess(
+        `Generation complete: ${response.data.generated} created, ${response.data.updated} updated, ${response.data.skipped} finalized reports skipped.`
+      );
+
+      await fetchReports();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to generate monthly reports."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const finalizeReport = async (report: MonthlyReport) => {
+    if (
+      !window.confirm(
+        `Finalize the monthly report for ${report.assistant.user.fullName}? This action cannot be undone.`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setActionLoading(true);
+      setError("");
+      setSuccess("");
+
+      await apiRequest<ApiResponse<MonthlyReport>>(
+        "/monthly-reports/finalize",
+        {
+          method: "POST",
+          body: JSON.stringify({ reportId: report.id }),
+        }
+      );
+
+      setSuccess("Monthly report finalized successfully.");
+      setSelectedReport(null);
+      await fetchReports();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to finalize monthly report."
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
   const downloadReport = (report: MonthlyReport) => {
-  if (report.status !== "FINALIZED") return;
+    if (report.status !== "FINALIZED") return;
 
-  generateMonthlyReport(report);
-};
+    generateMonthlyReport({
+      id: report.id,
+      assistant: report.assistant.user.fullName,
+      month: getReportMonth(report),
+      evaluationCount: report.evaluationCount,
+      averageScore: getScore(report.overallScore),
+      kpiScores: report.kpiScores.map((score) => ({
+        criterionName: score.criterionName,
+        averageWeight: Number(score.averageWeight),
+        averageScore: Number(score.averageScore),
+      })),
+      observations: report.observations ?? [],
+    });
+  };
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">
-          Monthly Reports
-        </h1>
-        <p className="mt-1 text-sm text-slate-500">
-          Review and manage monthly assistant performance reports.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-800">
+            Monthly Reports
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Review and manage monthly assistant performance reports.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="month"
+            value={generationMonth}
+            onChange={(e) => setGenerationMonth(e.target.value)}
+            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+          />
+
+          <Button
+            onClick={generateReports}
+            disabled={actionLoading || !generationMonth}
+          >
+            <RefreshCw size={16} />
+            Generate Reports
+          </Button>
+        </div>
       </div>
 
-      {/* Summary cards */}
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          {error}
+        </div>
+      )}
+
+      {success && (
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+          {success}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card padding="md">
           <div className="flex items-center gap-3">
@@ -167,7 +320,7 @@ export default function MonthlyReportsPage() {
             <div>
               <p className="text-sm text-slate-500">Finalized Reports</p>
               <p className="text-2xl font-bold text-slate-800">
-                {reports.filter((r) => r.status === "FINALIZED").length}
+                {finalizedCount}
               </p>
             </div>
           </div>
@@ -188,7 +341,6 @@ export default function MonthlyReportsPage() {
         </Card>
       </div>
 
-      {/* Filters */}
       <Card padding="md">
         <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
           <div className="relative">
@@ -232,11 +384,22 @@ export default function MonthlyReportsPage() {
         </div>
       </Card>
 
-      {/* Reports table */}
       <Card padding="lg">
-        <h2 className="mb-4 font-semibold text-slate-800">
-          Assistant Reports
-        </h2>
+        <div className="mb-4 flex items-center justify-between">
+          <h2 className="font-semibold text-slate-800">
+            Assistant Reports
+          </h2>
+
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={fetchReports}
+            disabled={loading}
+          >
+            <RefreshCw size={15} />
+            Refresh
+          </Button>
+        </div>
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[700px] text-left text-sm">
@@ -259,19 +422,21 @@ export default function MonthlyReportsPage() {
                   className="border-b border-slate-50 last:border-0"
                 >
                   <td className="py-4 font-medium text-slate-700">
-                    {report.id}
+                    {report.id.slice(0, 8)}
                   </td>
                   <td className="py-4 text-slate-700">
-                    {report.assistant}
+                    {report.assistant.user.fullName}
                   </td>
                   <td className="py-4 text-slate-500">
-                    {formatMonth(report.month)}
+                    {formatMonth(getReportMonth(report))}
                   </td>
                   <td className="py-4 text-slate-600">
                     {report.evaluationCount}
                   </td>
                   <td className="py-4 font-semibold text-slate-800">
-                    {report.averageScore.toFixed(1)}%
+                    {getScore(report.overallScore) === null
+                      ? "N/A"
+                      : `${Number(report.overallScore).toFixed(1)}%`}
                   </td>
                   <td className="py-4">
                     <Badge variant={statusVariant(report.status)}>
@@ -302,7 +467,7 @@ export default function MonthlyReportsPage() {
                 </tr>
               ))}
 
-              {filteredReports.length === 0 && (
+              {!loading && filteredReports.length === 0 && (
                 <tr>
                   <td
                     colSpan={7}
@@ -312,12 +477,22 @@ export default function MonthlyReportsPage() {
                   </td>
                 </tr>
               )}
+
+              {loading && (
+                <tr>
+                  <td
+                    colSpan={7}
+                    className="py-10 text-center text-slate-500"
+                  >
+                    Loading monthly reports...
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
       </Card>
 
-      {/* Report details */}
       {selectedReport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
           <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-xl bg-white p-6 shadow-xl">
@@ -327,7 +502,8 @@ export default function MonthlyReportsPage() {
                   Monthly Performance Report
                 </h2>
                 <p className="mt-1 text-sm text-slate-500">
-                  {selectedReport.assistant} · {formatMonth(selectedReport.month)}
+                  {selectedReport.assistant.user.fullName} ·{" "}
+                  {formatMonth(getReportMonth(selectedReport))}
                 </p>
               </div>
 
@@ -344,7 +520,9 @@ export default function MonthlyReportsPage() {
               <div className="rounded-lg bg-slate-50 p-4">
                 <p className="text-xs text-slate-500">Final Score</p>
                 <p className="mt-1 text-2xl font-bold text-blue-700">
-                  {selectedReport.averageScore.toFixed(1)}%
+                  {getScore(selectedReport.overallScore) === null
+                    ? "N/A"
+                    : `${Number(selectedReport.overallScore).toFixed(1)}%`}
                 </p>
               </div>
 
@@ -369,39 +547,48 @@ export default function MonthlyReportsPage() {
               KPI Performance Breakdown
             </h3>
 
-            <div className="space-y-4">
-              {criteria.map((criterion, index) => (
-                <div key={criterion.id}>
-                  <div className="mb-1 flex justify-between gap-3 text-sm">
-                    <span className="text-slate-700">
-                      {criterion.name}
-                      <span className="ml-1 text-xs text-slate-400">
-                        ({criterion.weight}%)
+            {selectedReport.kpiScores.length > 0 ? (
+              <div className="space-y-4">
+                {selectedReport.kpiScores.map((criterion) => (
+                  <div key={criterion.id}>
+                    <div className="mb-1 flex justify-between gap-3 text-sm">
+                      <span className="text-slate-700">
+                        {criterion.criterionName}
+                        <span className="ml-1 text-xs text-slate-400">
+                          ({Number(criterion.averageWeight).toFixed(1)}%)
+                        </span>
                       </span>
-                    </span>
-                    <span className="font-medium text-slate-800">
-                      {selectedReport.kpiScores[index]}%
-                    </span>
-                  </div>
+                      <span className="font-medium text-slate-800">
+                        {Number(criterion.averageScore).toFixed(1)}%
+                      </span>
+                    </div>
 
-                  <div className="h-2 overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className="h-full rounded-full bg-blue-600"
-                      style={{
-                        width: `${selectedReport.kpiScores[index]}%`,
-                      }}
-                    />
+                    <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className="h-full rounded-full bg-blue-600"
+                        style={{
+                          width: `${Math.min(
+                            100,
+                            Math.max(0, Number(criterion.averageScore))
+                          )}%`,
+                        }}
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-slate-500">
+                No KPI scores are available for this report.
+              </p>
+            )}
 
             <div className="mt-6 rounded-lg border border-slate-200 p-4">
               <h3 className="mb-3 font-semibold text-slate-800">
                 Consolidated Observations
               </h3>
 
-              {selectedReport.observations.length > 0 ? (
+              {selectedReport.observations?.length > 0 ? (
                 <ul className="space-y-2">
                   {selectedReport.observations.map((observation, index) => (
                     <li
@@ -421,6 +608,16 @@ export default function MonthlyReportsPage() {
             </div>
 
             <div className="mt-6 flex flex-wrap justify-end gap-2">
+              {selectedReport.status === "DRAFT" &&
+                selectedReport.evaluationCount > 0 && (
+                  <Button
+                    disabled={actionLoading}
+                    onClick={() => finalizeReport(selectedReport)}
+                  >
+                    Finalize Report
+                  </Button>
+                )}
+
               <Button
                 variant="outline"
                 onClick={() => setSelectedReport(null)}

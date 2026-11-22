@@ -1,30 +1,46 @@
 
-import { useMemo, useState } from "react";
-import { MessageSquareText, ClipboardCheck, CheckCircle2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  MessageSquareText,
+  ClipboardCheck,
+  CheckCircle2,
+} from "lucide-react";
 
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
+import { apiRequest } from "../../services/api";
 
-const assistants = [
-  { id: "1", name: "Sarah Ahmed" },
-  { id: "2", name: "Amine Benali" },
-  { id: "3", name: "Lina Mansouri" },
-];
+interface Assistant {
+  id: string;
+  name: string;
+}
 
-const criteria = [
-  { id: "1", name: "Room Turnover Time", weight: 10 },
-  { id: "2", name: "On-Time Seating Rate", weight: 8 },
-  { id: "3", name: "Chart Prep Completion", weight: 10 },
-  { id: "4", name: "Lab Case Tracking", weight: 8 },
-  { id: "5", name: "X-Ray & Image Quality", weight: 10 },
-  { id: "6", name: "Post-Op Call Success", weight: 9 },
-  { id: "7", name: "Ready-to-Work Punctuality", weight: 7 },
-  { id: "8", name: "Uniform & Hygiene Standards", weight: 8 },
-  { id: "9", name: "Overtime Management", weight: 4 },
-  { id: "10", name: "Emergency & Late Flexibility", weight: 6 },
-  { id: "11", name: "In-Chair Waiting Time", weight: 8 },
-  { id: "12", name: "Patient Comfort & Tone", weight: 12 },
-];
+interface Criterion {
+  id: string;
+  name: string;
+  weight: number;
+  displayOrder: number;
+}
+
+interface EvaluationFormResponse {
+  success: boolean;
+  data: {
+    assistants: Assistant[];
+    configuration: {
+      id: string;
+      version: number;
+      criteria: Criterion[];
+    };
+  };
+}
+
+interface EvaluationResponse {
+  success: boolean;
+  message: string;
+  data: {
+    overallScore: number | string;
+  };
+}
 
 const ratingScores: Record<number, number> = {
   1: 60,
@@ -35,13 +51,50 @@ const ratingScores: Record<number, number> = {
 };
 
 export default function EvaluationsPage() {
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [criteria, setCriteria] = useState<Criterion[]>([]);
+
   const [assistantId, setAssistantId] = useState("");
   const [ratings, setRatings] = useState<Record<string, number>>({});
   const [observation, setObservation] = useState("");
+
   const [submitted, setSubmitted] = useState(false);
+  const [submittedScore, setSubmittedScore] = useState<number | null>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    async function loadEvaluationForm() {
+      try {
+        setLoading(true);
+        setError("");
+
+        const response =
+          await apiRequest<EvaluationFormResponse>(
+            "/evaluations/form"
+          );
+
+        setAssistants(response.data.assistants);
+        setCriteria(response.data.configuration.criteria);
+      } catch (err) {
+        setError(
+          err instanceof Error
+            ? err.message
+            : "Failed to load evaluation data."
+        );
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    void loadEvaluationForm();
+  }, []);
 
   const completedCount = Object.keys(ratings).length;
-  const allRated = completedCount === criteria.length;
+  const allRated =
+    criteria.length > 0 && completedCount === criteria.length;
 
   const score = useMemo(() => {
     return criteria.reduce((total, criterion) => {
@@ -49,9 +102,12 @@ export default function EvaluationsPage() {
 
       if (!rating) return total;
 
-      return total + (criterion.weight * ratingScores[rating]) / 100;
+      return (
+        total +
+        (criterion.weight * ratingScores[rating]) / 100
+      );
     }, 0);
-  }, [ratings]);
+  }, [ratings, criteria]);
 
   const handleRating = (criterionId: string, rating: number) => {
     setRatings((previous) => ({
@@ -60,45 +116,93 @@ export default function EvaluationsPage() {
     }));
   };
 
-  const handleSubmit = () => {
-    if (!assistantId || !allRated) return;
+  const handleSubmit = async () => {
+    if (!assistantId || !allRated || saving) return;
 
-    // Temporary submission simulation.
-    // Later, this will send the evaluation to the backend.
-    console.log({
-      assistantId,
-      ratings,
-      observation: observation.trim() || null,
-      score,
-    });
+    try {
+      setSaving(true);
+      setError("");
 
-    setSubmitted(true);
+      const response = await apiRequest<EvaluationResponse>(
+        "/evaluations",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            assistantId,
+            ratings: criteria.map((criterion) => ({
+              configurationItemId: criterion.id,
+              rating: ratings[criterion.id],
+            })),
+            observation: observation.trim() || null,
+          }),
+        }
+      );
+
+      setSubmittedScore(
+        Number(response.data.overallScore)
+      );
+      setSubmitted(true);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to submit evaluation."
+      );
+    } finally {
+      setSaving(false);
+    }
   };
 
   const resetForm = () => {
     setAssistantId("");
     setRatings({});
     setObservation("");
+    setSubmittedScore(null);
     setSubmitted(false);
+    setError("");
   };
+
+  if (loading) {
+    return (
+      <p className="py-10 text-center">
+        Loading evaluation form...
+      </p>
+    );
+  }
+
+  if (error && criteria.length === 0) {
+    return (
+      <p className="rounded-xl border border-red-200 p-4 text-sm text-red-600">
+        {error}
+      </p>
+    );
+  }
 
   if (submitted) {
     return (
       <div className="mx-auto max-w-2xl space-y-6">
         <Card padding="lg">
           <div className="flex flex-col items-center py-8 text-center">
-            <CheckCircle2 size={52} className="mb-4 text-emerald-600" />
+            <CheckCircle2
+              size={52}
+              className="mb-4 text-emerald-600"
+            />
+
             <h2 className="text-xl font-semibold text-slate-800">
               Evaluation submitted
             </h2>
+
             <p className="mt-2 text-sm text-slate-500">
               The evaluation has been recorded successfully.
             </p>
 
             <p className="mt-5 text-3xl font-bold text-slate-800">
-              {score.toFixed(1)}%
+              {submittedScore?.toFixed(1)}%
             </p>
-            <p className="text-sm text-slate-500">Final score</p>
+
+            <p className="text-sm text-slate-500">
+              Final score
+            </p>
 
             <Button className="mt-6" onClick={resetForm}>
               New Evaluation
@@ -115,10 +219,17 @@ export default function EvaluationsPage() {
         <h1 className="text-2xl font-bold text-slate-800">
           Assistant Evaluation
         </h1>
+
         <p className="mt-1 text-sm text-slate-500">
           Evaluate an assistant based on the clinic's KPI criteria.
         </p>
       </div>
+
+      {error && (
+        <div className="rounded-xl border border-red-200 p-4 text-sm text-red-600">
+          {error}
+        </div>
+      )}
 
       {/* Assistant selection */}
       <Card padding="lg">
@@ -136,12 +247,19 @@ export default function EvaluationsPage() {
           className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500"
         >
           <option value="">Choose an assistant</option>
+
           {assistants.map((assistant) => (
             <option key={assistant.id} value={assistant.id}>
               {assistant.name}
             </option>
           ))}
         </select>
+
+        {assistants.length === 0 && (
+          <p className="mt-2 text-sm text-slate-500">
+            No active assistants available.
+          </p>
+        )}
       </Card>
 
       {/* KPI criteria */}
@@ -151,6 +269,7 @@ export default function EvaluationsPage() {
             <h2 className="font-semibold text-slate-800">
               KPI Assessment
             </h2>
+
             <p className="mt-1 text-sm text-slate-500">
               Rate each criterion from 1 to 5.
             </p>
@@ -172,6 +291,7 @@ export default function EvaluationsPage() {
                   <p className="text-sm font-medium text-slate-800">
                     {index + 1}. {criterion.name}
                   </p>
+
                   <p className="mt-1 text-xs text-slate-500">
                     Weight: {criterion.weight}%
                   </p>
@@ -189,7 +309,9 @@ export default function EvaluationsPage() {
                   <button
                     key={rating}
                     type="button"
-                    onClick={() => handleRating(criterion.id, rating)}
+                    onClick={() =>
+                      handleRating(criterion.id, rating)
+                    }
                     className={`h-10 flex-1 rounded-lg border text-sm font-semibold transition ${
                       ratings[criterion.id] === rating
                         ? "border-blue-600 bg-blue-600 text-white"
@@ -208,11 +330,18 @@ export default function EvaluationsPage() {
       {/* Observation */}
       <Card padding="lg">
         <div className="mb-3 flex items-center gap-2">
-          <MessageSquareText size={19} className="text-blue-600" />
+          <MessageSquareText
+            size={19}
+            className="text-blue-600"
+          />
+
           <h2 className="font-semibold text-slate-800">
             Dentist's Observation
           </h2>
-          <span className="text-xs text-slate-400">Optional</span>
+
+          <span className="text-xs text-slate-400">
+            Optional
+          </span>
         </div>
 
         <p className="mb-3 text-sm text-slate-500">
@@ -238,10 +367,14 @@ export default function EvaluationsPage() {
       <Card padding="lg">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
-            <p className="text-sm text-slate-500">Current weighted score</p>
+            <p className="text-sm text-slate-500">
+              Current weighted score
+            </p>
+
             <p className="text-3xl font-bold text-slate-800">
               {score.toFixed(1)}%
             </p>
+
             <p className="mt-1 text-xs text-slate-500">
               {allRated
                 ? "All criteria have been rated."
@@ -251,10 +384,10 @@ export default function EvaluationsPage() {
 
           <Button
             onClick={handleSubmit}
-            disabled={!assistantId || !allRated}
+            disabled={!assistantId || !allRated || saving}
           >
             <ClipboardCheck size={17} />
-            Submit Evaluation
+            {saving ? "Submitting..." : "Submit Evaluation"}
           </Button>
         </div>
       </Card>

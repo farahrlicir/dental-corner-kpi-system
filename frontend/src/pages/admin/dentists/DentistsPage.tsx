@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Search,
   UserRound,
@@ -13,8 +13,14 @@ import {
 import Card from "../../../components/ui/Card";
 import Button from "../../../components/ui/Button";
 import Badge from "../../../components/ui/Badge";
+import { apiRequest } from "../../../services/api";
 
-type DentistStatus = "ACTIVE" | "INACTIVE";
+type DentistStatus =
+  | "PENDING"
+  | "ACTIVE"
+  | "INACTIVE"
+  | "REJECTED"
+  | "DELETED";
 
 interface Dentist {
   id: string;
@@ -24,112 +30,123 @@ interface Dentist {
   status: DentistStatus;
 }
 
-interface RegistrationRequest {
-  id: string;
-  name: string;
-  email: string;
-  registrationDate: string;
+type DentistAction =
+  | "APPROVE"
+  | "REJECT"
+  | "ACTIVATE"
+  | "DEACTIVATE";
+
+interface DentistsResponse {
+  success: boolean;
+  data: Dentist[];
 }
 
-const initialDentists: Dentist[] = [
-  {
-    id: "D001",
-    name: "Sarah Ahmed",
-    email: "sarah@clinic.com",
-    registrationDate: "2026-10-12",
-    status: "ACTIVE",
-  },
-  {
-    id: "D002",
-    name: "Mohamed Karim",
-    email: "mohamed@clinic.com",
-    registrationDate: "2026-10-15",
-    status: "ACTIVE",
-  },
-  {
-    id: "D003",
-    name: "Lina Benali",
-    email: "lina@clinic.com",
-    registrationDate: "2026-10-20",
-    status: "INACTIVE",
-  },
-];
-
-const initialRequests: RegistrationRequest[] = [
-  {
-    id: "R001",
-    name: "Amine Haddad",
-    email: "amine@example.com",
-    registrationDate: "2026-11-17",
-  },
-  {
-    id: "R002",
-    name: "Nadia Mansouri",
-    email: "nadia@example.com",
-    registrationDate: "2026-11-18",
-  },
-];
+interface DentistUpdateResponse {
+  success: boolean;
+  message: string;
+}
 
 function DentistsPage() {
-  const [dentists, setDentists] = useState(initialDentists);
-  const [requests, setRequests] = useState(initialRequests);
+  const [dentists, setDentists] = useState<Dentist[]>([]);
   const [activeTab, setActiveTab] = useState<"all" | "pending">("all");
   const [search, setSearch] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function fetchDentists() {
+    try {
+      setError("");
+
+      const response = await apiRequest<DentistsResponse>(
+        "/dentists"
+      );
+
+      setDentists(response.data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not load dentists."
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    fetchDentists();
+  }, []);
+
+  const pendingRequests = dentists.filter(
+    (dentist) => dentist.status === "PENDING"
+  );
+
+  const displayedDentists = dentists.filter(
+    (dentist) => dentist.status !== "PENDING"
+  );
 
   const activeCount = dentists.filter(
     (dentist) => dentist.status === "ACTIVE"
   ).length;
 
-  const pendingCount = requests.length;
-
-  const filteredDentists = dentists.filter((dentist) =>
+  const filteredDentists = displayedDentists.filter((dentist) =>
     `${dentist.name} ${dentist.email}`
       .toLowerCase()
       .includes(search.toLowerCase())
   );
 
-  const filteredRequests = requests.filter((request) =>
+  const filteredRequests = pendingRequests.filter((request) =>
     `${request.name} ${request.email}`
       .toLowerCase()
       .includes(search.toLowerCase())
   );
 
-  function approveRequest(request: RegistrationRequest) {
-    const newDentist: Dentist = {
-      ...request,
-      status: "ACTIVE",
-    };
+  async function updateStatus(
+    dentistId: string,
+    action: DentistAction
+  ) {
+    try {
+      setBusyId(dentistId);
+      setError("");
 
-    setDentists((previous) => [...previous, newDentist]);
-    setRequests((previous) =>
-      previous.filter((item) => item.id !== request.id)
-    );
+      await apiRequest<DentistUpdateResponse>(
+        `/dentists/${dentistId}/status`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ action }),
+        }
+      );
+
+      await fetchDentists();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not update dentist account."
+      );
+    } finally {
+      setBusyId(null);
+    }
   }
 
-  function rejectRequest(requestId: string) {
-    setRequests((previous) =>
-      previous.filter((item) => item.id !== requestId)
-    );
+  function formatDate(date: string) {
+    return new Date(date).toLocaleDateString();
   }
 
-  function toggleDentistStatus(dentistId: string) {
-    setDentists((previous) =>
-      previous.map((dentist) =>
-        dentist.id === dentistId
-          ? {
-              ...dentist,
-              status:
-                dentist.status === "ACTIVE" ? "INACTIVE" : "ACTIVE",
-            }
-          : dentist
-      )
-    );
+  function getStatusVariant(status: DentistStatus) {
+    switch (status) {
+      case "ACTIVE":
+        return "success";
+      case "PENDING":
+        return "warning";
+      default:
+        return "neutral";
+    }
   }
 
   return (
     <div className="space-y-6">
-
-      {/* Page heading */}
       <div>
         <h1 className="text-2xl font-bold text-text-main">
           Dentist Management
@@ -139,14 +156,19 @@ function DentistsPage() {
         </p>
       </div>
 
-      {/* Summary cards */}
+      {error && (
+        <div className="rounded-lg border border-danger/30 bg-danger/10 p-3 text-sm text-danger">
+          {error}
+        </div>
+      )}
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card padding="md">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-text-muted">Total Dentists</p>
               <h2 className="mt-2 text-2xl font-bold text-text-main">
-                {dentists.length}
+                {displayedDentists.length}
               </h2>
             </div>
             <UserRound className="text-primary" size={24} />
@@ -170,7 +192,7 @@ function DentistsPage() {
             <div>
               <p className="text-sm text-text-muted">Pending Requests</p>
               <h2 className="mt-2 text-2xl font-bold text-text-main">
-                {pendingCount}
+                {pendingRequests.length}
               </h2>
             </div>
             <Clock className="text-warning" size={24} />
@@ -178,7 +200,6 @@ function DentistsPage() {
         </Card>
       </div>
 
-      {/* Tabs and search */}
       <Card padding="lg">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-2">
@@ -201,7 +222,7 @@ function DentistsPage() {
                 setSearch("");
               }}
             >
-              Pending Requests ({pendingCount})
+              Pending Requests ({pendingRequests.length})
             </Button>
           </div>
 
@@ -220,129 +241,152 @@ function DentistsPage() {
           </div>
         </div>
 
-        {/* All dentists */}
-        {activeTab === "all" && (
-          <div className="mt-6 overflow-x-auto">
-            <table className="w-full min-w-[650px] text-left">
-              <thead>
-                <tr className="border-b border-border text-xs text-text-muted">
-                  <th className="pb-3 font-medium">Dentist</th>
-                  <th className="pb-3 font-medium">Registration Date</th>
-                  <th className="pb-3 font-medium">Status</th>
-                  <th className="pb-3 text-right font-medium">Action</th>
-                </tr>
-              </thead>
+        {loading ? (
+          <p className="py-10 text-center text-sm text-text-muted">
+            Loading dentists...
+          </p>
+        ) : (
+          <>
+            {activeTab === "all" && (
+              <div className="mt-6 overflow-x-auto">
+                <table className="w-full min-w-[650px] text-left">
+                  <thead>
+                    <tr className="border-b border-border text-xs text-text-muted">
+                      <th className="pb-3 font-medium">Dentist</th>
+                      <th className="pb-3 font-medium">Registration Date</th>
+                      <th className="pb-3 font-medium">Status</th>
+                      <th className="pb-3 text-right font-medium">Action</th>
+                    </tr>
+                  </thead>
 
-              <tbody>
-                {filteredDentists.map((dentist) => (
-                  <tr
-                    key={dentist.id}
-                    className="border-b border-border last:border-0"
-                  >
-                    <td className="py-4">
-                      <p className="text-sm font-medium text-text-main">
-                        {dentist.name}
-                      </p>
-                      <p className="mt-1 text-xs text-text-muted">
-                        {dentist.email}
-                      </p>
-                    </td>
-
-                    <td className="py-4 text-sm text-text-muted">
-                      {dentist.registrationDate}
-                    </td>
-
-                    <td className="py-4">
-                      <Badge
-                        variant={
-                          dentist.status === "ACTIVE"
-                            ? "success"
-                            : "neutral"
-                        }
+                  <tbody>
+                    {filteredDentists.map((dentist) => (
+                      <tr
+                        key={dentist.id}
+                        className="border-b border-border last:border-0"
                       >
-                        {dentist.status}
-                      </Badge>
-                    </td>
+                        <td className="py-4">
+                          <p className="text-sm font-medium text-text-main">
+                            {dentist.name}
+                          </p>
+                          <p className="mt-1 text-xs text-text-muted">
+                            {dentist.email}
+                          </p>
+                        </td>
 
-                    <td className="py-4 text-right">
+                        <td className="py-4 text-sm text-text-muted">
+                          {formatDate(dentist.registrationDate)}
+                        </td>
+
+                        <td className="py-4">
+                          <Badge variant={getStatusVariant(dentist.status)}>
+                            {dentist.status}
+                          </Badge>
+                        </td>
+
+                        <td className="py-4 text-right">
+                          {dentist.status === "ACTIVE" && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              disabled={busyId === dentist.id}
+                              onClick={() =>
+                                updateStatus(dentist.id, "DEACTIVATE")
+                              }
+                            >
+                              <Power size={14} />
+                              Deactivate
+                            </Button>
+                          )}
+
+                          {dentist.status === "INACTIVE" && (
+                            <Button
+                              size="sm"
+                              variant="secondary"
+                              disabled={busyId === dentist.id}
+                              onClick={() =>
+                                updateStatus(dentist.id, "ACTIVATE")
+                              }
+                            >
+                              <Power size={14} />
+                              Activate
+                            </Button>
+                          )}
+
+                          {busyId === dentist.id && (
+                            <span className="ml-2 text-xs text-text-muted">
+                              Updating...
+                            </span>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {filteredDentists.length === 0 && (
+                  <p className="py-8 text-center text-sm text-text-muted">
+                    No dentists found.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {activeTab === "pending" && (
+              <div className="mt-6 space-y-3">
+                {filteredRequests.map((request) => (
+                  <div
+                    key={request.id}
+                    className="flex flex-col gap-4 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium text-text-main">
+                        {request.name}
+                      </p>
+                      <p className="mt-1 text-sm text-text-muted">
+                        {request.email}
+                      </p>
+                      <p className="mt-1 text-xs text-text-light">
+                        Registered: {formatDate(request.registrationDate)}
+                      </p>
+                    </div>
+
+                    <div className="flex gap-2">
                       <Button
                         size="sm"
-                        variant={
-                          dentist.status === "ACTIVE"
-                            ? "outline"
-                            : "secondary"
-                        }
+                        variant="primary"
+                        disabled={busyId === request.id}
                         onClick={() =>
-                          toggleDentistStatus(dentist.id)
+                          updateStatus(request.id, "APPROVE")
                         }
                       >
-                        <Power size={14} />
-                        {dentist.status === "ACTIVE"
-                          ? "Deactivate"
-                          : "Activate"}
+                        <Check size={15} />
+                        Approve
                       </Button>
-                    </td>
-                  </tr>
+
+                      <Button
+                        size="sm"
+                        variant="danger"
+                        disabled={busyId === request.id}
+                        onClick={() =>
+                          updateStatus(request.id, "REJECT")
+                        }
+                      >
+                        <X size={15} />
+                        Reject
+                      </Button>
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
 
-            {filteredDentists.length === 0 && (
-              <p className="py-8 text-center text-sm text-text-muted">
-                No dentists found.
-              </p>
-            )}
-          </div>
-        )}
-
-        {/* Pending requests */}
-        {activeTab === "pending" && (
-          <div className="mt-6 space-y-3">
-            {filteredRequests.map((request) => (
-              <div
-                key={request.id}
-                className="flex flex-col gap-4 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-medium text-text-main">
-                    {request.name}
+                {filteredRequests.length === 0 && (
+                  <p className="py-8 text-center text-sm text-text-muted">
+                    No pending registration requests.
                   </p>
-                  <p className="mt-1 text-sm text-text-muted">
-                    {request.email}
-                  </p>
-                  <p className="mt-1 text-xs text-text-light">
-                    Registered: {request.registrationDate}
-                  </p>
-                </div>
-
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="primary"
-                    onClick={() => approveRequest(request)}
-                  >
-                    <Check size={15} />
-                    Approve
-                  </Button>
-
-                  <Button
-                    size="sm"
-                    variant="danger"
-                    onClick={() => rejectRequest(request.id)}
-                  >
-                    <X size={15} />
-                    Reject
-                  </Button>
-                </div>
+                )}
               </div>
-            ))}
-
-            {filteredRequests.length === 0 && (
-              <p className="py-8 text-center text-sm text-text-muted">
-                No pending registration requests.
-              </p>
             )}
-          </div>
+          </>
         )}
       </Card>
     </div>

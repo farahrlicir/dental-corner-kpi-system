@@ -62,12 +62,6 @@ export const navigationItems: NavItem[] = [
     allowedRoles: ["ADMIN"],
   },
   {
-    label: "Patient Feedback",
-    path: "/feedback",
-    icon: MessageSquare,
-    allowedRoles: ["ADMIN", "DENTIST", "ASSISTANT"],
-  },
-  {
     label: "Settings",
     path: "/settings",
     icon: Settings,

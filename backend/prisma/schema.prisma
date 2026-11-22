@@ -1,0 +1,291 @@
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==========================================
+// ENUMS
+// ==========================================
+
+enum Role {
+  ADMIN
+  DENTIST
+  ASSISTANT
+}
+
+enum UserStatus {
+  PENDING
+  ACTIVE
+  INACTIVE
+  REJECTED
+  DELETED
+}
+
+// ==========================================
+// USER ACCOUNT
+// ==========================================
+
+model User {
+  id           String     @id @default(uuid()) @db.Uuid
+  fullName     String     @map("full_name") @db.VarChar(150)
+  email        String     @unique @db.VarChar(255)
+  phone        String?    @db.VarChar(30)
+  passwordHash String     @map("password_hash") @db.VarChar(255)
+
+  status UserStatus @default(PENDING)
+
+  emailVerifiedAt DateTime? @map("email_verified_at")
+
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  roles        UserRole[]
+  dentist      Dentist?
+  assistant    Assistant?
+
+  @@map("users")
+  auditLogs AuditLog[]
+}
+
+// ==========================================
+// USER ROLES
+// ==========================================
+
+model UserRole {
+  userId String @map("user_id") @db.Uuid
+  role   Role
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, role])
+  @@map("user_roles")
+}
+
+// ==========================================
+// DENTIST PROFILE
+// ==========================================
+
+model Dentist {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  licenseNumber String? @unique @map("license_number") @db.VarChar(100)
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("dentists")
+}
+
+// ==========================================
+// ASSISTANT PROFILE
+// ==========================================
+
+model Assistant {
+  id     String @id @default(uuid()) @db.Uuid
+  userId String @unique @map("user_id") @db.Uuid
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("assistants")
+  evaluations Evaluation[]
+  monthlyReports MonthlyReport[]
+}
+
+
+
+// ==========================================
+// KPI CONFIGURATION
+// ==========================================
+
+enum KpiVersionStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+model KpiConfiguration {
+  id          String           @id @default(uuid()) @db.Uuid
+  version     Int              @unique
+  status      KpiVersionStatus @default(DRAFT)
+  publishedAt DateTime?        @map("published_at")
+  createdAt   DateTime         @default(now()) @map("created_at")
+  updatedAt   DateTime         @updatedAt @map("updated_at")
+
+  criteria KpiConfigurationItem[]
+
+  @@map("kpi_configurations")
+  evaluations Evaluation[]
+}
+
+// ==========================================
+// KPI CRITERIA
+// ==========================================
+
+model KpiCriterion {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String   @unique @db.VarChar(150)
+  description String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  configurations KpiConfigurationItem[]
+
+  @@map("kpi_criteria")
+  monthlyReportScores MonthlyReportKpiScore[]
+}
+
+// ==========================================
+// KPI ITEMS PER CONFIGURATION
+// ==========================================
+
+model KpiConfigurationItem {
+  id              String  @id @default(uuid()) @db.Uuid
+  configurationId String  @map("configuration_id") @db.Uuid
+  criterionName   String  @map("criterion_name") @db.VarChar(150)
+  criterionId     String  @map("criterion_id") @db.Uuid
+  weight          Decimal @db.Decimal(5, 2)
+  displayOrder    Int     @map("display_order")
+
+  configuration KpiConfiguration @relation(fields: [configurationId], references: [id], onDelete: Restrict)
+  criterion     KpiCriterion     @relation(fields: [criterionId], references: [id], onDelete: Restrict)
+
+  @@unique([configurationId, criterionId])
+  @@unique([configurationId, displayOrder])
+  @@map("kpi_configuration_items")
+  evaluationItems EvaluationItem[]
+}
+
+
+
+
+// ==========================================
+// EVALUATIONS
+// ==========================================
+
+model Evaluation {
+  id              String   @id @default(uuid()) @db.Uuid
+  assistantId     String   @map("assistant_id") @db.Uuid
+  configurationId String   @map("configuration_id") @db.Uuid
+
+  overallScore    Decimal  @map("overall_score") @db.Decimal(5, 2)
+  observation     String?  @db.Text
+
+  submittedAt     DateTime @default(now()) @map("submitted_at")
+
+  assistant      Assistant         @relation(fields: [assistantId], references: [id], onDelete: Restrict)
+  configuration  KpiConfiguration  @relation(fields: [configurationId], references: [id], onDelete: Restrict)
+  items          EvaluationItem[]
+
+  @@index([assistantId, submittedAt])
+  @@index([configurationId])
+  @@map("evaluations")
+}
+
+// ==========================================
+// INDIVIDUAL KPI RATINGS
+// ==========================================
+
+model EvaluationItem {
+  id                       String  @id @default(uuid()) @db.Uuid
+  evaluationId             String  @map("evaluation_id") @db.Uuid
+  configurationItemId      String  @map("configuration_item_id") @db.Uuid
+
+  rating                   Int
+  score                    Decimal @db.Decimal(5, 2)
+
+  evaluation        Evaluation             @relation(fields: [evaluationId], references: [id], onDelete: Cascade)
+  configurationItem KpiConfigurationItem  @relation(fields: [configurationItemId], references: [id], onDelete: Restrict)
+
+  @@unique([evaluationId, configurationItemId])
+  @@map("evaluation_items")
+}
+
+
+
+// ==========================================
+// MONTHLY REPORTS
+// ==========================================
+
+enum MonthlyReportStatus {
+  DRAFT
+  FINALIZED
+}
+
+model MonthlyReport {
+  id              String              @id @default(uuid()) @db.Uuid
+  assistantId     String              @map("assistant_id") @db.Uuid
+
+  year            Int
+  month           Int
+
+  overallScore    Decimal? @map("overall_score") @db.Decimal(5, 2)
+  evaluationCount Int      @default(0) @map("evaluation_count")
+  status          MonthlyReportStatus @default(DRAFT)
+
+  finalizedAt     DateTime?           @map("finalized_at")
+  createdAt       DateTime            @default(now()) @map("created_at")
+  updatedAt       DateTime            @updatedAt @map("updated_at")
+
+  assistant       Assistant           @relation(fields: [assistantId], references: [id], onDelete: Restrict)
+  kpiScores       MonthlyReportKpiScore[]
+
+  @@unique([assistantId, year, month])
+  @@index([year, month])
+  @@map("monthly_reports")
+}
+
+// ==========================================
+// MONTHLY REPORT KPI SCORES
+// ==========================================
+
+
+model MonthlyReportKpiScore {
+  id              String   @id @default(uuid()) @db.Uuid
+  reportId        String   @map("report_id") @db.Uuid
+  criterionId     String   @map("criterion_id") @db.Uuid
+
+  criterionName   String   @map("criterion_name") @db.VarChar(150)
+  averageWeight   Decimal  @map("average_weight") @db.Decimal(5, 2)
+  averageScore    Decimal  @map("average_score") @db.Decimal(5, 2)
+
+  report          MonthlyReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  criterion       KpiCriterion  @relation(fields: [criterionId], references: [id], onDelete: Restrict)
+
+  @@unique([reportId, criterionId])
+  @@map("monthly_report_kpi_scores")
+}
+
+
+
+
+// ==========================================
+// AUDIT LOGS
+// ==========================================
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Uuid
+  actorId    String?  @map("actor_id") @db.Uuid
+
+  action     String   @db.VarChar(100)
+  entityType String   @map("entity_type") @db.VarChar(100)
+  entityId   String?  @map("entity_id") @db.VarChar(100)
+
+  details    Json?
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  actor      User?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId, createdAt])
+  @@index([entityType, entityId])
+  @@map("audit_logs")
+}

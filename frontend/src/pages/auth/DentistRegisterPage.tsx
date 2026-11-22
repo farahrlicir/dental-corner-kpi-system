@@ -6,6 +6,18 @@ import { Stethoscope } from "lucide-react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
+import { apiRequest } from "../../services/api";
+
+interface RegisterResponse {
+  success: boolean;
+  message: string;
+  data: {
+    id: string;
+    fullName: string;
+    email: string;
+    status: string;
+  };
+}
 
 export default function DentistRegisterPage() {
   const [fullName, setFullName] = useState("");
@@ -15,12 +27,19 @@ export default function DentistRegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
-    if (!fullName.trim() || !email.trim() || !phone.trim() || !password || !confirmPassword) {
+    if (
+      !fullName.trim() ||
+      !email.trim() ||
+      !phone.trim() ||
+      !password ||
+      !confirmPassword
+    ) {
       setError("Please complete all fields.");
       return;
     }
@@ -35,16 +54,31 @@ export default function DentistRegisterPage() {
       return;
     }
 
-    // Temporary: backend registration will be connected later.
-    console.log({
-      fullName,
-      email,
-      phone,
-      password,
-      status: "PENDING",
-    });
+    try {
+      setLoading(true);
 
-    setSubmitted(true);
+      const response = await apiRequest<RegisterResponse>("/auth/register", {
+        method: "POST",
+        body: JSON.stringify({
+          fullName: fullName.trim(),
+          email: email.trim(),
+          phone: phone.trim(),
+          password,
+        }),
+      });
+
+      if (response.success) {
+        setSubmitted(true);
+      } else {
+        setError(response.message || "Registration failed.");
+      }
+    } catch (error) {
+      setError(
+        error instanceof Error ? error.message : "Registration failed."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   if (submitted) {
@@ -158,8 +192,8 @@ export default function DentistRegisterPage() {
               </p>
             )}
 
-            <Button type="submit" block>
-              Submit Registration
+            <Button type="submit" block disabled={loading}>
+              {loading ? "Submitting..." : "Submit Registration"}
             </Button>
           </form>
 
