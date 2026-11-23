@@ -71,10 +71,9 @@ export default function EvaluationsPage() {
         setLoading(true);
         setError("");
 
-        const response =
-          await apiRequest<EvaluationFormResponse>(
-            "/evaluations/form"
-          );
+        const response = await apiRequest<EvaluationFormResponse>(
+          "/evaluations/form"
+        );
 
         setAssistants(response.data.assistants);
         setCriteria(response.data.configuration.criteria);
@@ -93,31 +92,45 @@ export default function EvaluationsPage() {
   }, []);
 
   const completedCount = Object.keys(ratings).length;
-  const allRated =
-    criteria.length > 0 && completedCount === criteria.length;
+  const hasRatings = completedCount > 0;
 
   const score = useMemo(() => {
-    return criteria.reduce((total, criterion) => {
+    const selectedCriteria = criteria.filter(
+      (criterion) => ratings[criterion.id] !== undefined
+    );
+
+    const totalSelectedWeight = selectedCriteria.reduce(
+      (total, criterion) => total + criterion.weight,
+      0
+    );
+
+    if (totalSelectedWeight === 0) return 0;
+
+    const weightedScore = selectedCriteria.reduce((total, criterion) => {
       const rating = ratings[criterion.id];
 
-      if (!rating) return total;
-
-      return (
-        total +
-        (criterion.weight * ratingScores[rating]) / 100
-      );
+      return total + criterion.weight * ratingScores[rating];
     }, 0);
+
+    return weightedScore / totalSelectedWeight;
   }, [ratings, criteria]);
 
   const handleRating = (criterionId: string, rating: number) => {
-    setRatings((previous) => ({
-      ...previous,
-      [criterionId]: rating,
-    }));
+    setRatings((previous) => {
+      const updated = { ...previous };
+
+      if (updated[criterionId] === rating) {
+        delete updated[criterionId];
+      } else {
+        updated[criterionId] = rating;
+      }
+
+      return updated;
+    });
   };
 
   const handleSubmit = async () => {
-    if (!assistantId || !allRated || saving) return;
+    if (!assistantId || !hasRatings || saving) return;
 
     try {
       setSaving(true);
@@ -129,18 +142,18 @@ export default function EvaluationsPage() {
           method: "POST",
           body: JSON.stringify({
             assistantId,
-            ratings: criteria.map((criterion) => ({
-              configurationItemId: criterion.id,
-              rating: ratings[criterion.id],
-            })),
+            ratings: criteria
+              .filter((criterion) => ratings[criterion.id] !== undefined)
+              .map((criterion) => ({
+                configurationItemId: criterion.id,
+                rating: ratings[criterion.id],
+              })),
             observation: observation.trim() || null,
           }),
         }
       );
 
-      setSubmittedScore(
-        Number(response.data.overallScore)
-      );
+      setSubmittedScore(Number(response.data.overallScore));
       setSubmitted(true);
     } catch (err) {
       setError(
@@ -163,11 +176,7 @@ export default function EvaluationsPage() {
   };
 
   if (loading) {
-    return (
-      <p className="py-10 text-center">
-        Loading evaluation form...
-      </p>
-    );
+    return <p className="py-10 text-center">Loading evaluation form...</p>;
   }
 
   if (error && criteria.length === 0) {
@@ -193,7 +202,7 @@ export default function EvaluationsPage() {
             </h2>
 
             <p className="mt-2 text-sm text-slate-500">
-              The evaluation has been recorded successfully.
+              Your evaluation has been submitted and is awaiting admin approval.
             </p>
 
             <p className="mt-5 text-3xl font-bold text-slate-800">
@@ -201,7 +210,7 @@ export default function EvaluationsPage() {
             </p>
 
             <p className="text-sm text-slate-500">
-              Final score
+              Provisional score
             </p>
 
             <Button className="mt-6" onClick={resetForm}>
@@ -231,7 +240,6 @@ export default function EvaluationsPage() {
         </div>
       )}
 
-      {/* Assistant selection */}
       <Card padding="lg">
         <h2 className="mb-4 font-semibold text-slate-800">
           Evaluation Details
@@ -262,7 +270,6 @@ export default function EvaluationsPage() {
         )}
       </Card>
 
-      {/* KPI criteria */}
       <Card padding="lg">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -271,12 +278,12 @@ export default function EvaluationsPage() {
             </h2>
 
             <p className="mt-1 text-sm text-slate-500">
-              Rate each criterion from 1 to 5.
+              Rate the criteria you want to evaluate. At least one is required.
             </p>
           </div>
 
           <span className="rounded-full bg-blue-50 px-3 py-1 text-sm font-medium text-blue-700">
-            {completedCount}/{criteria.length} completed
+            {completedCount}/{criteria.length} selected
           </span>
         </div>
 
@@ -300,7 +307,7 @@ export default function EvaluationsPage() {
                 <span className="text-xs text-slate-500">
                   {ratings[criterion.id]
                     ? `Rating: ${ratings[criterion.id]}/5`
-                    : "Not rated"}
+                    : "Not evaluated"}
                 </span>
               </div>
 
@@ -309,9 +316,7 @@ export default function EvaluationsPage() {
                   <button
                     key={rating}
                     type="button"
-                    onClick={() =>
-                      handleRating(criterion.id, rating)
-                    }
+                    onClick={() => handleRating(criterion.id, rating)}
                     className={`h-10 flex-1 rounded-lg border text-sm font-semibold transition ${
                       ratings[criterion.id] === rating
                         ? "border-blue-600 bg-blue-600 text-white"
@@ -325,23 +330,21 @@ export default function EvaluationsPage() {
             </div>
           ))}
         </div>
+
+        <p className="mt-4 text-xs text-slate-400">
+          Click a selected rating again to remove it.
+        </p>
       </Card>
 
-      {/* Observation */}
       <Card padding="lg">
         <div className="mb-3 flex items-center gap-2">
-          <MessageSquareText
-            size={19}
-            className="text-blue-600"
-          />
+          <MessageSquareText size={19} className="text-blue-600" />
 
           <h2 className="font-semibold text-slate-800">
             Dentist's Observation
           </h2>
 
-          <span className="text-xs text-slate-400">
-            Optional
-          </span>
+          <span className="text-xs text-slate-400">Optional</span>
         </div>
 
         <p className="mb-3 text-sm text-slate-500">
@@ -363,7 +366,6 @@ export default function EvaluationsPage() {
         </p>
       </Card>
 
-      {/* Score and submission */}
       <Card padding="lg">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
@@ -376,15 +378,17 @@ export default function EvaluationsPage() {
             </p>
 
             <p className="mt-1 text-xs text-slate-500">
-              {allRated
-                ? "All criteria have been rated."
-                : `Rate ${criteria.length - completedCount} more criteria to complete.`}
+              {hasRatings
+                ? `Calculated from ${completedCount} selected ${
+                    completedCount === 1 ? "criterion" : "criteria"
+                  }.`
+                : "Select at least one criterion to calculate the score."}
             </p>
           </div>
 
           <Button
             onClick={handleSubmit}
-            disabled={!assistantId || !allRated || saving}
+            disabled={!assistantId || !hasRatings || saving}
           >
             <ClipboardCheck size={17} />
             {saving ? "Submitting..." : "Submit Evaluation"}

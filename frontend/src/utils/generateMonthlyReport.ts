@@ -40,13 +40,12 @@ export function generateMonthlyReport(report: MonthlyReportData) {
   doc.setFontSize(11);
   doc.text(`Assistant: ${report.assistant}`, 15, 51);
   doc.text(`Reporting Period: ${monthLabel}`, 15, 59);
-  doc.text(`Report ID: ${report.id}`, 15, 67);
 
   doc.setFillColor(240, 246, 251);
-  doc.roundedRect(15, 77, 180, 28, 3, 3, "F");
+  doc.roundedRect(15, 70, 180, 28, 3, 3, "F");
 
   doc.setFontSize(10);
-  doc.text("FINAL PERFORMANCE SCORE", 22, 88);
+  doc.text("FINAL PERFORMANCE SCORE", 22, 81);
 
   doc.setFontSize(20);
   doc.setTextColor(36, 91, 134);
@@ -55,15 +54,15 @@ export function generateMonthlyReport(report: MonthlyReportData) {
       ? "N/A"
       : `${report.averageScore.toFixed(1)}%`,
     22,
-    99
+    92
   );
 
   doc.setFontSize(10);
   doc.setTextColor(30, 41, 59);
-  doc.text(`Evaluations: ${report.evaluationCount}`, 120, 94);
+  doc.text(`Evaluations: ${report.evaluationCount}`, 120, 87);
 
   autoTable(doc, {
-    startY: 115,
+    startY: 108,
     head: [["KPI Criterion", "Weight", "Performance"]],
     body: report.kpiScores.map((criterion) => [
       criterion.criterionName,
@@ -86,7 +85,7 @@ export function generateMonthlyReport(report: MonthlyReportData) {
 
   const finalY =
     (doc as jsPDF & { lastAutoTable?: { finalY: number } })
-      .lastAutoTable?.finalY ?? 115;
+      .lastAutoTable?.finalY ?? 108;
 
   let observationY = finalY + 12;
 

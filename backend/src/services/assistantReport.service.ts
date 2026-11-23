@@ -1,3 +1,4 @@
+
 import prisma from "../config/prisma";
 
 export const getMyMonthlyReports = async (userId: string) => {
@@ -10,13 +11,30 @@ export const getMyMonthlyReports = async (userId: string) => {
     throw new Error("ASSISTANT_PROFILE_NOT_FOUND");
   }
 
-  return prisma.monthlyReport.findMany({
+  const reports = await prisma.monthlyReport.findMany({
     where: {
       assistantId: assistant.id,
       status: "FINALIZED",
+      generationType: "AUTOMATIC",
     },
-    include: {
+    select: {
+      id: true,
+      year: true,
+      month: true,
+      overallScore: true,
+      evaluationCount: true,
+      dentistCount: true,
+      averageKpiCoverage: true,
+      status: true,
+      generationType: true,
+      finalizedAt: true,
+      createdAt: true,
       kpiScores: {
+        select: {
+          criterionName: true,
+          averageWeight: true,
+          averageScore: true,
+        },
         orderBy: {
           criterionName: "asc",
         },
@@ -27,4 +45,6 @@ export const getMyMonthlyReports = async (userId: string) => {
       { month: "desc" },
     ],
   });
+
+  return reports;
 };

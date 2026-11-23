@@ -7,6 +7,8 @@ import {
   TrendingUp,
   Award,
   MessageSquare,
+  Users,
+  Target,
 } from "lucide-react";
 
 import Card from "../../components/ui/Card";
@@ -28,7 +30,10 @@ type ApiMonthlyReport = {
   month: number;
   overallScore: number | string | null;
   evaluationCount: number;
-  status: "FINALIZED" | "DRAFT";
+  dentistCount: number;
+  averageKpiCoverage: number | string | null;
+  status: "FINALIZED";
+  generationType: "AUTOMATIC";
   kpiScores: ApiKpiScore[];
   observations?: string[];
 };
@@ -38,8 +43,10 @@ type MonthlyReport = {
   assistant: string;
   month: string;
   evaluationCount: number;
-  averageScore: number;
-  status: "FINALIZED" | "DRAFT";
+  dentistCount: number;
+  averageKpiCoverage: number | null;
+  averageScore: number | null;
+  status: "FINALIZED";
   kpiScores: {
     name: string;
     score: number;
@@ -87,9 +94,14 @@ export default function MyPerformancePage() {
           assistant: "My Performance",
           month: `${report.year}-${String(report.month).padStart(2, "0")}`,
           evaluationCount: report.evaluationCount,
+          dentistCount: report.dentistCount,
+          averageKpiCoverage:
+            report.averageKpiCoverage === null
+              ? null
+              : Number(report.averageKpiCoverage),
           averageScore:
             report.overallScore === null
-              ? 0
+              ? null
               : Number(report.overallScore),
           status: report.status,
           kpiScores: report.kpiScores.map((kpi) => ({
@@ -139,13 +151,29 @@ export default function MyPerformancePage() {
   }, [reports, selectedReport]);
 
   const scoreDifference =
-    selectedReport && previousReport
+    selectedReport?.averageScore !== null &&
+    selectedReport?.averageScore !== undefined &&
+    previousReport?.averageScore !== null &&
+    previousReport?.averageScore !== undefined
       ? selectedReport.averageScore - previousReport.averageScore
       : null;
 
   const downloadReport = () => {
     if (!selectedReport) return;
-    generateMonthlyReport(selectedReport);
+
+    generateMonthlyReport({
+      id: selectedReport.id,
+      assistant: selectedReport.assistant,
+      month: selectedReport.month,
+      evaluationCount: selectedReport.evaluationCount,
+      averageScore: selectedReport.averageScore,
+      kpiScores: selectedReport.kpiScores.map((kpi) => ({
+        criterionName: kpi.name,
+        averageWeight: kpi.weight,
+        averageScore: kpi.score,
+      })),
+      observations: selectedReport.observations,
+    });
   };
 
   if (loading) {
@@ -199,7 +227,6 @@ export default function MyPerformancePage() {
 
   return (
     <div className="space-y-6">
-      {/* Page heading */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">
@@ -216,7 +243,6 @@ export default function MyPerformancePage() {
         </Button>
       </div>
 
-      {/* Month selector */}
       <Card padding="md">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-2 text-slate-700">
@@ -238,14 +264,15 @@ export default function MyPerformancePage() {
         </div>
       </Card>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card padding="lg">
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-slate-500">Overall Score</p>
               <p className="mt-2 text-3xl font-bold text-slate-800">
-                {selectedReport.averageScore.toFixed(1)}%
+                {selectedReport.averageScore === null
+                  ? "N/A"
+                  : `${selectedReport.averageScore.toFixed(1)}%`}
               </p>
             </div>
             <div className="rounded-xl bg-blue-50 p-3 text-blue-600">
@@ -253,13 +280,19 @@ export default function MyPerformancePage() {
             </div>
           </div>
           <div className="mt-3">
-            <Badge variant={getScoreVariant(selectedReport.averageScore)}>
-              {selectedReport.averageScore >= 90
-                ? "Excellent"
-                : selectedReport.averageScore >= 75
-                  ? "Good"
-                  : "Needs Improvement"}
-            </Badge>
+            {selectedReport.averageScore !== null ? (
+              <Badge variant={getScoreVariant(selectedReport.averageScore)}>
+                {selectedReport.averageScore >= 90
+                  ? "Excellent"
+                  : selectedReport.averageScore >= 75
+                    ? "Good"
+                    : selectedReport.averageScore >= 60
+                      ? "Satisfactory"
+                      : "Needs Improvement"}
+              </Badge>
+            ) : (
+              <Badge variant="warning">No score available</Badge>
+            )}
           </div>
         </Card>
 
@@ -276,7 +309,43 @@ export default function MyPerformancePage() {
             </div>
           </div>
           <p className="mt-3 text-xs text-slate-500">
-            Total evaluations this month
+            Approved evaluations this month
+          </p>
+        </Card>
+
+        <Card padding="lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500">Evaluating Dentists</p>
+              <p className="mt-2 text-3xl font-bold text-slate-800">
+                {selectedReport.dentistCount}
+              </p>
+            </div>
+            <div className="rounded-xl bg-indigo-50 p-3 text-indigo-600">
+              <Users size={24} />
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Number of dentists contributing to this report
+          </p>
+        </Card>
+
+        <Card padding="lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-slate-500">Average KPI Coverage</p>
+              <p className="mt-2 text-3xl font-bold text-slate-800">
+                {selectedReport.averageKpiCoverage === null
+                  ? "N/A"
+                  : `${selectedReport.averageKpiCoverage.toFixed(1)}%`}
+              </p>
+            </div>
+            <div className="rounded-xl bg-purple-50 p-3 text-purple-600">
+              <Target size={24} />
+            </div>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            Average proportion of KPI criteria evaluated
           </p>
         </Card>
 
@@ -300,14 +369,13 @@ export default function MyPerformancePage() {
         </Card>
       </div>
 
-      {/* KPI breakdown */}
       <Card padding="lg">
         <div className="mb-6">
           <h2 className="text-lg font-semibold text-slate-800">
             KPI Performance Breakdown
           </h2>
           <p className="mt-1 text-sm text-slate-500">
-            Your performance across all clinic evaluation criteria.
+            Your performance across the clinic evaluation criteria.
           </p>
         </div>
 
@@ -321,7 +389,7 @@ export default function MyPerformancePage() {
                   </span>
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-slate-400">
-                      Weight: {kpi.weight}%
+                      Weight: {kpi.weight.toFixed(1)}%
                     </span>
                     <span className="text-sm font-semibold text-slate-800">
                       {kpi.score.toFixed(1)}%
@@ -332,7 +400,9 @@ export default function MyPerformancePage() {
                 <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
                   <div
                     className="h-full rounded-full bg-blue-600 transition-all"
-                    style={{ width: `${kpi.score}%` }}
+                    style={{
+                      width: `${Math.min(100, Math.max(0, kpi.score))}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -345,7 +415,6 @@ export default function MyPerformancePage() {
         )}
       </Card>
 
-      {/* Observations */}
       <Card padding="lg">
         <div className="mb-4 flex items-center gap-2">
           <MessageSquare size={20} className="text-blue-600" />

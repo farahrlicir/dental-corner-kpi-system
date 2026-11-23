@@ -2,6 +2,13 @@
 import prisma from "../config/prisma";
 import { MonthlyReportQuery } from "../validators/monthlyReport.validator";
 
+const average = (values: number[]): number | null => {
+  if (values.length === 0) return null;
+
+  return Number(
+    (values.reduce((sum, value) => sum + value, 0) / values.length).toFixed(2)
+  );
+};
 
 export const getMonthlyReports = async (
   filters: MonthlyReportQuery
@@ -42,6 +49,8 @@ export const getMonthlyReports = async (
       const evaluations = await prisma.evaluation.findMany({
         where: {
           assistantId: report.assistantId,
+          status: "APPROVED",
+          dentistId: { not: null },
           submittedAt: {
             gte: startDate,
             lt: endDate,
@@ -70,10 +79,10 @@ export const getMonthlyReports = async (
   );
 };
 
-
 export const generateMonthlyReports = async (
   year: number,
-  month: number
+  month: number,
+  generationType: "MANUAL" | "AUTOMATIC" = "MANUAL"
 ) => {
   const now = new Date();
   const currentYear = now.getUTCFullYear();
@@ -93,15 +102,15 @@ export const generateMonthlyReports = async (
     prisma.assistant.findMany({
       include: {
         user: {
-          select: {
-            fullName: true,
-          },
+          select: { fullName: true },
         },
       },
     }),
 
     prisma.evaluation.findMany({
       where: {
+        status: "APPROVED",
+        dentistId: { not: null },
         submittedAt: {
           gte: startDate,
           lt: endDate,
@@ -111,6 +120,11 @@ export const generateMonthlyReports = async (
         items: {
           include: {
             configurationItem: true,
+          },
+        },
+        configuration: {
+          include: {
+            criteria: true,
           },
         },
       },
@@ -129,73 +143,142 @@ export const generateMonthlyReports = async (
       (evaluation) => evaluation.assistantId === assistant.id
     );
 
+    // Group evaluations by dentist.
+    const dentistGroups = new Map<string, typeof assistantEvaluations>();
+
+    for (const evaluation of assistantEvaluations) {
+      if (!evaluation.dentistId) continue;
+
+      const group = dentistGroups.get(evaluation.dentistId) ?? [];
+      group.push(evaluation);
+      dentistGroups.set(evaluation.dentistId, group);
+    }
+
+    const dentistCount = dentistGroups.size;
     const evaluationCount = assistantEvaluations.length;
 
-    const overallScore =
-      evaluationCount > 0
-        ? assistantEvaluations.reduce(
-            (sum, evaluation) =>
-              sum + Number(evaluation.overallScore),
-            0
-          ) / evaluationCount
-        : null;
+    // Each dentist contributes equally to the monthly overall score.
+    const dentistOverallAverages = Array.from(
+      dentistGroups.values()
+    ).map((dentistEvaluations) =>
+      average(
+        dentistEvaluations.map((evaluation) =>
+          Number(evaluation.overallScore)
+        )
+      )
+    );
 
-    // Aggregate KPI scores by criterion.
-    const criterionMap = new Map<
+    const overallScore = average(
+      dentistOverallAverages.filter(
+        (score): score is number => score !== null
+      )
+    );
+
+    // Calculate KPI averages separately for each dentist.
+    const criterionGroups = new Map<
       string,
       {
         criterionName: string;
-        totalScore: number;
-        totalWeight: number;
-        count: number;
+        dentists: Map<
+          string,
+          { scores: number[]; weights: number[] }
+        >;
       }
     >();
 
-    for (const evaluation of assistantEvaluations) {
-      for (const item of evaluation.items) {
-        const configurationItem = item.configurationItem;
-        const criterionId = configurationItem.criterionId;
+    for (const [dentistId, dentistEvaluations] of dentistGroups) {
+      for (const evaluation of dentistEvaluations) {
+        for (const item of evaluation.items) {
+          const configurationItem = item.configurationItem;
+          const criterionId = configurationItem.criterionId;
 
-        const existing = criterionMap.get(criterionId);
+          let criterion = criterionGroups.get(criterionId);
 
-        if (existing) {
-          existing.criterionName =
-            configurationItem.criterionName;
-          existing.totalScore += Number(item.score);
-          existing.totalWeight += Number(
-            configurationItem.weight
-          );
-          existing.count += 1;
-        } else {
-          criterionMap.set(criterionId, {
-            criterionName: configurationItem.criterionName,
-            totalScore: Number(item.score),
-            totalWeight: Number(configurationItem.weight),
-            count: 1,
-          });
+          if (!criterion) {
+            criterion = {
+              criterionName: configurationItem.criterionName,
+              dentists: new Map(),
+            };
+            criterionGroups.set(criterionId, criterion);
+          }
+
+          let dentistData = criterion.dentists.get(dentistId);
+
+          if (!dentistData) {
+            dentistData = { scores: [], weights: [] };
+            criterion.dentists.set(dentistId, dentistData);
+          }
+
+          dentistData.scores.push(Number(item.score));
+          dentistData.weights.push(Number(configurationItem.weight));
         }
       }
     }
 
-    const kpiScores = Array.from(
-      criterionMap.entries()
-    ).map(([criterionId, data]) => ({
-      criterionId,
-      criterionName: data.criterionName,
-      averageScore: Number(
-        (data.totalScore / data.count).toFixed(2)
-      ),
-      averageWeight: Number(
-        (data.totalWeight / data.count).toFixed(2)
-      ),
-    }));
+    const kpiScores = Array.from(criterionGroups.entries()).map(
+      ([criterionId, criterion]) => {
+        const dentistScoreAverages: number[] = [];
+        const dentistWeightAverages: number[] = [];
+
+        for (const dentistData of criterion.dentists.values()) {
+          const score = average(dentistData.scores);
+          const weight = average(dentistData.weights);
+
+          if (score !== null) dentistScoreAverages.push(score);
+          if (weight !== null) dentistWeightAverages.push(weight);
+        }
+
+        return {
+          criterionId,
+          criterionName: criterion.criterionName,
+          averageScore: average(dentistScoreAverages) ?? 0,
+          averageWeight: average(dentistWeightAverages) ?? 0,
+        };
+      }
+    );
+
+    // Calculate average KPI coverage per dentist, then across dentists.
+    const dentistCoverageAverages: number[] = [];
+
+    for (const dentistEvaluations of dentistGroups.values()) {
+      const evaluationCoverages: number[] = [];
+
+      for (const evaluation of dentistEvaluations) {
+        const totalConfigurationWeight =
+          evaluation.configuration.criteria.reduce(
+            (sum, criterion) => sum + Number(criterion.weight),
+            0
+          );
+
+        const selectedWeight = evaluation.items.reduce(
+          (sum, item) =>
+            sum + Number(item.configurationItem.weight),
+          0
+        );
+
+        if (totalConfigurationWeight > 0) {
+          evaluationCoverages.push(
+            (selectedWeight / totalConfigurationWeight) * 100
+          );
+        }
+      }
+
+      const dentistCoverage = average(evaluationCoverages);
+
+      if (dentistCoverage !== null) {
+        dentistCoverageAverages.push(dentistCoverage);
+      }
+    }
+
+    const averageKpiCoverage = average(dentistCoverageAverages);
 
     const existingReport = await prisma.monthlyReport.findUnique({
       where: {
-        assistantId_year_month: {
+        assistantId_year_month_generationType: {
           assistantId: assistant.id,
           year,
           month,
+          generationType,
         },
       },
     });
@@ -209,31 +292,35 @@ export const generateMonthlyReports = async (
     await prisma.$transaction(async (tx) => {
       const report = await tx.monthlyReport.upsert({
         where: {
-          assistantId_year_month: {
+          assistantId_year_month_generationType: {
             assistantId: assistant.id,
             year,
             month,
+            generationType,
           },
         },
         create: {
           assistantId: assistant.id,
           year,
           month,
+          generationType,
           overallScore,
           evaluationCount,
+          dentistCount,
+          averageKpiCoverage,
           status: "DRAFT",
         },
         update: {
           overallScore,
           evaluationCount,
+          dentistCount,
+          averageKpiCoverage,
           status: "DRAFT",
         },
       });
 
       await tx.monthlyReportKpiScore.deleteMany({
-        where: {
-          reportId: report.id,
-        },
+        where: { reportId: report.id },
       });
 
       if (kpiScores.length > 0) {
@@ -259,6 +346,7 @@ export const generateMonthlyReports = async (
   return {
     year,
     month,
+    generationType,
     totalAssistants: assistants.length,
     generated,
     updated,
@@ -281,10 +369,7 @@ export const finalizeMonthlyReport = async (
     throw new Error("MONTHLY_REPORT_ALREADY_FINALIZED");
   }
 
-  if (report.evaluationCount === 0) {
-    throw new Error("NO_EVALUATIONS_TO_FINALIZE");
-  }
-
+  // Reports with zero eligible evaluations can also be finalized.
   return prisma.monthlyReport.update({
     where: { id: reportId },
     data: {
@@ -295,9 +380,7 @@ export const finalizeMonthlyReport = async (
       assistant: {
         include: {
           user: {
-            select: {
-              fullName: true,
-            },
+            select: { fullName: true },
           },
         },
       },

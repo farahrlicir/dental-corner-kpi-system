@@ -1,11 +1,10 @@
-
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileText,
   Download,
-  Eye,
-  Search,
-  X,
+  Eye, 
+  Search, 
+  X, 
   TrendingUp,
   ClipboardList,
   RefreshCw,
@@ -31,6 +30,9 @@ interface MonthlyReport {
   month: number;
   overallScore: number | string | null;
   evaluationCount: number;
+  dentistCount: number;
+  averageKpiCoverage: number | string | null;
+  generationType: "AUTOMATIC" | "MANUAL";
   status: "DRAFT" | "FINALIZED";
   assistant: {
     user: {
@@ -402,12 +404,13 @@ export default function MonthlyReportsPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-sm">
+          <table className="w-full min-w-[850px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-slate-500">
                 <th className="pb-3 font-medium">Report ID</th>
                 <th className="pb-3 font-medium">Assistant</th>
                 <th className="pb-3 font-medium">Month</th>
+                <th className="pb-3 font-medium">Type</th>
                 <th className="pb-3 font-medium">Evaluations</th>
                 <th className="pb-3 font-medium">Average Score</th>
                 <th className="pb-3 font-medium">Status</th>
@@ -429,6 +432,17 @@ export default function MonthlyReportsPage() {
                   </td>
                   <td className="py-4 text-slate-500">
                     {formatMonth(getReportMonth(report))}
+                  </td>
+                  <td className="py-4">
+                    <Badge
+                      variant={
+                        report.generationType === "AUTOMATIC"
+                          ? "success"
+                          : "warning"
+                      }
+                    >
+                      {report.generationType}
+                    </Badge>
                   </td>
                   <td className="py-4 text-slate-600">
                     {report.evaluationCount}
@@ -470,7 +484,7 @@ export default function MonthlyReportsPage() {
               {!loading && filteredReports.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="py-10 text-center text-slate-500"
                   >
                     No monthly reports found.
@@ -481,7 +495,7 @@ export default function MonthlyReportsPage() {
               {loading && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={8}
                     className="py-10 text-center text-slate-500"
                   >
                     Loading monthly reports...
@@ -505,6 +519,17 @@ export default function MonthlyReportsPage() {
                   {selectedReport.assistant.user.fullName} ·{" "}
                   {formatMonth(getReportMonth(selectedReport))}
                 </p>
+                <div className="mt-2">
+                  <Badge
+                    variant={
+                      selectedReport.generationType === "AUTOMATIC"
+                        ? "success"
+                        : "warning"
+                    }
+                  >
+                    {selectedReport.generationType}
+                  </Badge>
+                </div>
               </div>
 
               <button
@@ -516,9 +541,9 @@ export default function MonthlyReportsPage() {
               </button>
             </div>
 
-            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
               <div className="rounded-lg bg-slate-50 p-4">
-                <p className="text-xs text-slate-500">Final Score</p>
+                <p className="text-xs text-slate-500">Monthly Score</p>
                 <p className="mt-1 text-2xl font-bold text-blue-700">
                   {getScore(selectedReport.overallScore) === null
                     ? "N/A"
@@ -530,6 +555,22 @@ export default function MonthlyReportsPage() {
                 <p className="text-xs text-slate-500">Evaluations</p>
                 <p className="mt-1 text-2xl font-bold text-slate-800">
                   {selectedReport.evaluationCount}
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">Evaluating Dentists</p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {selectedReport.dentistCount}
+                </p>
+              </div>
+
+              <div className="rounded-lg bg-slate-50 p-4">
+                <p className="text-xs text-slate-500">Average KPI Coverage</p>
+                <p className="mt-1 text-2xl font-bold text-slate-800">
+                  {selectedReport.averageKpiCoverage === null
+                    ? "N/A"
+                    : `${Number(selectedReport.averageKpiCoverage).toFixed(1)}%`}
                 </p>
               </div>
 
@@ -608,15 +649,14 @@ export default function MonthlyReportsPage() {
             </div>
 
             <div className="mt-6 flex flex-wrap justify-end gap-2">
-              {selectedReport.status === "DRAFT" &&
-                selectedReport.evaluationCount > 0 && (
-                  <Button
-                    disabled={actionLoading}
-                    onClick={() => finalizeReport(selectedReport)}
-                  >
-                    Finalize Report
-                  </Button>
-                )}
+              {selectedReport.status === "DRAFT" && (
+                <Button
+                  disabled={actionLoading}
+                  onClick={() => finalizeReport(selectedReport)}
+                >
+                  Finalize Report
+                </Button>
+              )}
 
               <Button
                 variant="outline"
@@ -636,6 +676,6 @@ export default function MonthlyReportsPage() {
           </div>
         </div>
       )}
-    </div>
-  );
+    </div> 
+  ); 
 }

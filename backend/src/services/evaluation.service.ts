@@ -1,6 +1,9 @@
 
 import prisma from "../config/prisma";
-import { CreateEvaluationInput } from "../validators/evaluation.validator";
+import {
+  CreateEvaluationInput,
+  UpdateEvaluationInput,
+} from "../validators/evaluation.validator";
 
 const ratingScore: Record<number, number> = {
   1: 60,
@@ -10,41 +13,92 @@ const ratingScore: Record<number, number> = {
   5: 100,
 };
 
+// Calculate normalized weighted score
+const calculateEvaluationScore = (
+  ratings: { configurationItemId: string; rating: number }[],
+  criteria: { id: string; weight: unknown }[]
+) => {
+  let weightedScoreTotal = 0;
+  let selectedWeightTotal = 0;
+
+  const items = ratings.map((rating) => {
+    const criterion = criteria.find(
+      (item) => item.id === rating.configurationItemId
+    );
+
+    if (!criterion) {
+      throw new Error("INVALID_EVALUATION_CRITERIA");
+    }
+
+    const score = ratingScore[rating.rating];
+    const weight = Number(criterion.weight);
+
+    weightedScoreTotal += weight * score;
+    selectedWeightTotal += weight;
+
+    return {
+      configurationItemId: criterion.id,
+      rating: rating.rating,
+      score,
+    };
+  });
+
+  if (selectedWeightTotal <= 0) {
+    throw new Error("INVALID_EVALUATION_CRITERIA");
+  }
+
+  return {
+    overallScore: Number(
+      (weightedScoreTotal / selectedWeightTotal).toFixed(2)
+    ),
+    items,
+  };
+};
+
+// Validate selected criteria
+const validateSelectedCriteria = (
+  ratings: { configurationItemId: string; rating: number }[],
+  criteria: { id: string }[]
+) => {
+  const submittedIds = ratings.map(
+    (rating) => rating.configurationItemId
+  );
+
+  const uniqueIds = new Set(submittedIds);
+
+  if (
+    uniqueIds.size !== submittedIds.length ||
+    !submittedIds.every((id) =>
+      criteria.some((criterion) => criterion.id === id)
+    )
+  ) {
+    throw new Error("INVALID_EVALUATION_CRITERIA");
+  }
+};
+
 // Get active assistants and the current published KPI configuration
 export const getEvaluationFormData = async () => {
   const [assistants, configuration] = await Promise.all([
     prisma.assistant.findMany({
       where: {
-        user: {
-          status: "ACTIVE",
-        },
+        user: { status: "ACTIVE" },
       },
       include: {
         user: {
-          select: {
-            fullName: true,
-          },
+          select: { fullName: true },
         },
       },
       orderBy: {
-        user: {
-          fullName: "asc",
-        },
+        user: { fullName: "asc" },
       },
     }),
 
     prisma.kpiConfiguration.findFirst({
-      where: {
-        status: "PUBLISHED",
-      },
-      orderBy: {
-        version: "desc",
-      },
+      where: { status: "PUBLISHED" },
+      orderBy: { version: "desc" },
       include: {
         criteria: {
-          orderBy: {
-            displayOrder: "asc",
-          },
+          orderBy: { displayOrder: "asc" },
         },
       },
     }),
@@ -74,18 +128,24 @@ export const getEvaluationFormData = async () => {
 
 // Create a new evaluation
 export const createEvaluation = async (
-  data: CreateEvaluationInput
+  data: CreateEvaluationInput,
+  userId: string
 ) => {
   return prisma.$transaction(async (tx) => {
+    const dentist = await tx.dentist.findUnique({
+      where: { userId },
+      select: { id: true },
+    });
+
+    if (!dentist) {
+      throw new Error("DENTIST_PROFILE_NOT_FOUND");
+    }
+
     const assistant = await tx.assistant.findUnique({
-      where: {
-        id: data.assistantId,
-      },
+      where: { id: data.assistantId },
       include: {
         user: {
-          select: {
-            status: true,
-          },
+          select: { status: true },
         },
       },
     });
@@ -95,18 +155,10 @@ export const createEvaluation = async (
     }
 
     const configuration = await tx.kpiConfiguration.findFirst({
-      where: {
-        status: "PUBLISHED",
-      },
-      orderBy: {
-        version: "desc",
-      },
+      where: { status: "PUBLISHED" },
+      orderBy: { version: "desc" },
       include: {
-        criteria: {
-          orderBy: {
-            displayOrder: "asc",
-          },
-        },
+        criteria: true,
       },
     });
 
@@ -114,65 +166,37 @@ export const createEvaluation = async (
       throw new Error("NO_PUBLISHED_KPI_CONFIGURATION");
     }
 
-    const criteria = configuration.criteria;
-    const submittedIds = data.ratings.map(
-      (rating) => rating.configurationItemId
+    validateSelectedCriteria(data.ratings, configuration.criteria);
+
+    const { overallScore, items } = calculateEvaluationScore(
+      data.ratings,
+      configuration.criteria
     );
-
-    const uniqueIds = new Set(submittedIds);
-
-    if (
-      uniqueIds.size !== criteria.length ||
-      submittedIds.length !== criteria.length ||
-      !criteria.every((criterion) =>
-        uniqueIds.has(criterion.id)
-      )
-    ) {
-      throw new Error("INVALID_EVALUATION_CRITERIA");
-    }
-
-    let overallScore = 0;
-
-    const evaluationItems = data.ratings.map((rating) => {
-      const criterion = criteria.find(
-        (item) => item.id === rating.configurationItemId
-      );
-
-      if (!criterion) {
-        throw new Error("INVALID_EVALUATION_CRITERIA");
-      }
-
-      const score = ratingScore[rating.rating];
-
-      overallScore +=
-        (Number(criterion.weight) * score) / 100;
-
-      return {
-        configurationItemId: criterion.id,
-        rating: rating.rating,
-        score,
-      };
-    });
-
-    overallScore = Number(overallScore.toFixed(2));
 
     return tx.evaluation.create({
       data: {
         assistantId: data.assistantId,
+        dentistId: dentist.id,
         configurationId: configuration.id,
+        status: "PENDING",
         overallScore,
         observation: data.observation || null,
         items: {
-          create: evaluationItems,
+          create: items,
         },
       },
       include: {
         assistant: {
           include: {
             user: {
-              select: {
-                fullName: true,
-              },
+              select: { fullName: true },
+            },
+          },
+        },
+        dentist: {
+          include: {
+            user: {
+              select: { fullName: true },
             },
           },
         },
@@ -183,6 +207,210 @@ export const createEvaluation = async (
         },
       },
     });
+  });
+};
+
+// Get pending evaluations for admin review
+export const getPendingEvaluations = async () => {
+  return prisma.evaluation.findMany({
+    where: {
+      status: "PENDING",
+    },
+    orderBy: {
+      submittedAt: "desc",
+    },
+    include: {
+      assistant: {
+        include: {
+          user: {
+            select: { fullName: true },
+          },
+        },
+      },
+      dentist: {
+        include: {
+          user: {
+            select: { fullName: true },
+          },
+        },
+      },
+      configuration: {
+  include: {
+    criteria: {
+      orderBy: {
+        displayOrder: "asc",
+      },
+    },
+  },
+},
+      items: {
+        include: {
+          configurationItem: true,
+        },
+      },
+    },
+  });
+};
+
+// Admin edits a pending evaluation
+export const updateEvaluation = async (
+  evaluationId: string,
+  data: UpdateEvaluationInput
+) => {
+  return prisma.$transaction(async (tx) => {
+    const evaluation = await tx.evaluation.findUnique({
+      where: { id: evaluationId },
+      include: {
+        configuration: {
+          include: {
+            criteria: true,
+          },
+        },
+      },
+    });
+
+    if (!evaluation) {
+      throw new Error("EVALUATION_NOT_FOUND");
+    }
+
+    if (evaluation.status !== "PENDING") {
+      throw new Error("EVALUATION_NOT_PENDING");
+    }
+
+    validateSelectedCriteria(
+      data.ratings,
+      evaluation.configuration.criteria
+    );
+
+    const { overallScore, items } = calculateEvaluationScore(
+      data.ratings,
+      evaluation.configuration.criteria
+    );
+
+    await tx.evaluationItem.deleteMany({
+      where: { evaluationId },
+    });
+
+    return tx.evaluation.update({
+      where: { id: evaluationId },
+      data: {
+        overallScore,
+        observation: data.observation || null,
+        items: {
+          create: items,
+        },
+      },
+      include: {
+        assistant: {
+          include: {
+            user: {
+              select: { fullName: true },
+            },
+          },
+        },
+        dentist: {
+          include: {
+            user: {
+              select: { fullName: true },
+            },
+          },
+        },
+        configuration: {
+          select: { version: true },
+        },
+        items: {
+          include: {
+            configurationItem: true,
+          },
+        },
+      },
+    });
+  });
+};
+
+// Admin approves a pending evaluation
+export const approveEvaluation = async (
+  evaluationId: string,
+  adminUserId: string
+) => {
+  const result = await prisma.evaluation.updateMany({
+    where: {
+      id: evaluationId,
+      status: "PENDING",
+    },
+    data: {
+      status: "APPROVED",
+      approvedById: adminUserId,
+      approvedAt: new Date(),
+    },
+  });
+
+  if (result.count === 0) {
+    const evaluation = await prisma.evaluation.findUnique({
+      where: { id: evaluationId },
+      select: { id: true },
+    });
+
+    if (!evaluation) {
+      throw new Error("EVALUATION_NOT_FOUND");
+    }
+
+    throw new Error("EVALUATION_NOT_PENDING");
+  }
+
+  return prisma.evaluation.findUnique({
+    where: { id: evaluationId },
+    include: {
+      assistant: {
+        include: {
+          user: {
+            select: { fullName: true },
+          },
+        },
+      },
+      dentist: {
+        include: {
+          user: {
+            select: { fullName: true },
+          },
+        },
+      },
+      items: {
+        include: {
+          configurationItem: true,
+        },
+      },
+    },
+  });
+};
+
+// Admin rejects a pending evaluation
+export const rejectEvaluation = async (evaluationId: string) => {
+  const result = await prisma.evaluation.updateMany({
+    where: {
+      id: evaluationId,
+      status: "PENDING",
+    },
+    data: {
+      status: "REJECTED",
+    },
+  });
+
+  if (result.count === 0) {
+    const evaluation = await prisma.evaluation.findUnique({
+      where: { id: evaluationId },
+      select: { id: true },
+    });
+
+    if (!evaluation) {
+      throw new Error("EVALUATION_NOT_FOUND");
+    }
+
+    throw new Error("EVALUATION_NOT_PENDING");
+  }
+
+  return prisma.evaluation.findUnique({
+    where: { id: evaluationId },
   });
 };
 
@@ -200,17 +428,9 @@ export const getEvaluationHistory = async (filters: {
   if (filters.month) {
     const [year, month] = filters.month.split("-").map(Number);
 
-    const startDate = new Date(
-      Date.UTC(year, month - 1, 1)
-    );
-
-    const endDate = new Date(
-      Date.UTC(year, month, 1)
-    );
-
     where.submittedAt = {
-      gte: startDate,
-      lt: endDate,
+      gte: new Date(Date.UTC(year, month - 1, 1)),
+      lt: new Date(Date.UTC(year, month, 1)),
     };
   }
 
@@ -223,16 +443,19 @@ export const getEvaluationHistory = async (filters: {
       assistant: {
         include: {
           user: {
-            select: {
-              fullName: true,
-            },
+            select: { fullName: true },
+          },
+        },
+      },
+      dentist: {
+        include: {
+          user: {
+            select: { fullName: true },
           },
         },
       },
       configuration: {
-        select: {
-          version: true,
-        },
+        select: { version: true },
       },
       items: {
         include: {
