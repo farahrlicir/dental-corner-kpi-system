@@ -6,13 +6,20 @@ import { ArrowLeft, Mail, ShieldCheck } from "lucide-react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
+import { apiRequest } from "../../services/api";
+
+interface ForgotPasswordResponse {
+  success: boolean;
+  message: string;
+}
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setError("");
 
@@ -21,13 +28,35 @@ export default function ForgotPasswordPage() {
       return;
     }
 
-    // Temporary until the password-reset API is implemented.
-    console.log("Password reset requested for:", email);
-    setSubmitted(true);
+    try {
+      setLoading(true);
+
+      const response = await apiRequest<ForgotPasswordResponse>(
+        "/auth/forgot-password",
+        {
+          method: "POST",
+          body: JSON.stringify({ email: email.trim() }),
+        }
+      );
+
+      if (response.success) {
+        setSubmitted(true);
+      } else {
+        setError(response.message || "Something went wrong.");
+      }
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not process your request. Please try again."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#F5F8FC] px-4 py-10">
+    <main className="flex min-h-dvh items-center justify-center bg-[#F5F8FC] px-4 py-10">
       <div className="w-full max-w-md">
         <div className="mb-7 text-center">
           <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#245B86] text-white">
@@ -62,26 +91,35 @@ export default function ForgotPasswordPage() {
           ) : (
             <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="mb-2 block text-sm font-medium text-slate-700">
+                <label
+                  htmlFor="email"
+                  className="mb-2 block text-sm font-medium text-slate-700"
+                >
                   Email address
                 </label>
 
                 <Input
+                  id="email"
                   type="email"
                   placeholder="you@example.com"
+                  autoComplete="email"
+                  required
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
                 />
               </div>
 
               {error && (
-                <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+                <p
+                  role="alert"
+                  className="rounded-lg bg-red-50 p-3 text-sm text-red-600"
+                >
                   {error}
                 </p>
               )}
 
-              <Button type="submit" block>
-                Send Reset Instructions
+              <Button type="submit" block disabled={loading}>
+                {loading ? "Sending..." : "Send Reset Instructions"}
               </Button>
             </form>
           )}

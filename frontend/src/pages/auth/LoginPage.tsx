@@ -60,7 +60,7 @@ export default function LoginPage() {
 
   if (!config) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex h-dvh items-center justify-center overflow-hidden">
         <p className="text-slate-500">Invalid login page.</p>
       </div>
     );
@@ -105,10 +105,10 @@ export default function LoginPage() {
         return;
       }
 
-     navigate(
-  expectedRole === "ASSISTANT" ? "/my-performance" : "/dashboard",
-  { replace: true }
-);
+      navigate(
+        expectedRole === "ASSISTANT" ? "/my-performance" : "/dashboard",
+        { replace: true }
+      );
     } catch (error) {
       setError(
         error instanceof Error ? error.message : "Login failed."
@@ -119,57 +119,77 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-[#F5F8FC] px-4 py-10">
+    <main className="flex h-dvh items-center justify-center overflow-hidden bg-[#F5F8FC] px-4 py-3 sm:py-4">
       <div className="w-full max-w-md">
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#245B86] text-white">
-            <Stethoscope size={28} />
+        <div className={`text-center ${role === "dentist" ? "mb-3 sm:mb-4" : "mb-4 sm:mb-5"}`}>
+          <div className="mx-auto mb-2 flex h-12 w-12 items-center justify-center rounded-2xl bg-[#245B86] text-white sm:h-14 sm:w-14">
+            <Stethoscope size={26} />
           </div>
 
           <h1 className="text-2xl font-bold text-[#172B4D]">
             {config.title}
           </h1>
 
-          <p className="mt-2 text-sm text-slate-500">
+          <p className="mt-1.5 text-sm text-slate-500">
             {config.subtitle}
           </p>
         </div>
 
-        <Card padding="lg">
-          <form onSubmit={handleSubmit} className="space-y-5">
+        <Card padding="md">
+          <form
+            onSubmit={handleSubmit}
+            className={role === "dentist" ? "space-y-3" : "space-y-4"}
+          >
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="email"
+                className="mb-1.5 block text-sm font-medium text-slate-700"
+              >
                 Email address
               </label>
+
               <div className="relative">
                 <Mail
                   size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                 />
                 <Input
+                  id="email"
                   type="email"
                   placeholder="you@example.com"
                   value={email}
                   onChange={(event) => setEmail(event.target.value)}
+                  className="pl-10"
+                  autoComplete="email"
+                  required
                 />
               </div>
             </div>
 
             <div>
-              <label className="mb-2 block text-sm font-medium text-slate-700">
+              <label
+                htmlFor="password"
+                className="mb-1.5 block text-sm font-medium text-slate-700"
+              >
                 Password
               </label>
+
               <div className="relative">
                 <LockKeyhole
                   size={18}
-                  className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
+                  className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"
                 />
                 <Input
+                  id="password"
                   type={showPassword ? "text" : "password"}
                   placeholder="Enter your password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
+                  className="pl-10 pr-10"
+                  autoComplete="current-password"
+                  required
                 />
+
                 <button
                   type="button"
                   onClick={() => setShowPassword(!showPassword)}
@@ -182,7 +202,10 @@ export default function LoginPage() {
             </div>
 
             {error && (
-              <p className="rounded-lg bg-red-50 p-3 text-sm text-red-600">
+              <p
+                className="rounded-lg bg-red-50 p-3 text-sm text-red-600"
+                role="alert"
+              >
                 {error}
               </p>
             )}
@@ -202,7 +225,7 @@ export default function LoginPage() {
           </form>
 
           {role === "dentist" && (
-            <p className="mt-6 text-center text-sm text-slate-500">
+            <p className="mt-4 text-center text-sm text-slate-500">
               Don't have an account?{" "}
               <Link
                 to="/register/dentist"
@@ -214,7 +237,7 @@ export default function LoginPage() {
           )}
         </Card>
 
-        <div className="mt-6 text-center">
+        <div className="mt-4 text-center">
           <Link
             to="/"
             className="text-sm text-slate-500 hover:text-[#245B86]"

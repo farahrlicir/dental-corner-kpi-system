@@ -1,6 +1,12 @@
 
 import { useState, useRef, useEffect } from "react";
-import { Bell, Menu, ChevronDown, UserRound, LockKeyhole, LogOut } from "lucide-react";
+import {
+  Menu,
+  ChevronDown,
+  UserRound,
+  LockKeyhole,
+  LogOut,
+} from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import type { AuthUser } from "../../types/auth";
 import { useAuth } from "../../context/AuthContext";
@@ -28,7 +34,6 @@ function Header({ user, onMenuClick }: HeaderProps) {
     .join(" / ");
 
   useEffect(() => {
-
     const handleClickOutside = (event: MouseEvent) => {
       if (
         menuRef.current &&
@@ -50,15 +55,15 @@ function Header({ user, onMenuClick }: HeaderProps) {
     navigate(path);
   };
 
- const handleLogout = async () => {
-  setMenuOpen(false);
+  const handleLogout = async () => {
+    setMenuOpen(false);
 
-  try {
-    await logout();
-  } finally {
-    navigate("/", { replace: true });
-  }
-};
+    try {
+      await logout();
+    } finally {
+      navigate("/", { replace: true });
+    }
+  };
 
   return (
     <header className="sticky top-0 z-20 flex h-20 items-center justify-between border-b border-border bg-surface px-4 sm:px-6 lg:px-8">
@@ -82,15 +87,10 @@ function Header({ user, onMenuClick }: HeaderProps) {
       </div>
 
       <div className="flex items-center gap-3 sm:gap-5">
-        <button
-          aria-label="Notifications"
-          className="relative rounded-lg p-2 text-text-muted hover:bg-surface-muted"
+        <div
+          className="relative border-l border-border pl-3 sm:pl-5"
+          ref={menuRef}
         >
-          <Bell size={21} />
-          <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-danger" />
-        </button>
-
-        <div className="relative border-l border-border pl-3 sm:pl-5" ref={menuRef}>
           <button
             type="button"
             onClick={() => setMenuOpen((previous) => !previous)}

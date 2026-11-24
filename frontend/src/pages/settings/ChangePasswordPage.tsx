@@ -6,6 +6,7 @@ import { LockKeyhole, ShieldCheck } from "lucide-react";
 import Card from "../../components/ui/Card";
 import Button from "../../components/ui/Button";
 import Input from "../../components/ui/Input";
+import { apiRequest } from "../../services/api";
 
 export default function ChangePasswordPage() {
   const navigate = useNavigate();
@@ -15,8 +16,11 @@ export default function ChangePasswordPage() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (
+    event: React.FormEvent<HTMLFormElement>
+  ) => {
     event.preventDefault();
     setError("");
 
@@ -36,14 +40,36 @@ export default function ChangePasswordPage() {
     }
 
     if (currentPassword === newPassword) {
-      setError("Your new password must be different from the current password.");
+      setError(
+        "Your new password must be different from the current password."
+      );
       return;
     }
 
-    // Temporary until the backend password API is connected.
-    console.log("Password change requested.");
+    try {
+      setLoading(true);
 
-    setSuccess(true);
+      await apiRequest("/auth/change-password", {
+        method: "POST",
+        body: JSON.stringify({
+          currentPassword,
+          newPassword,
+        }),
+      });
+
+      setSuccess(true);
+      setTimeout(() => {
+         navigate("/login", { replace: true });
+}, 2000);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Could not change your password."
+      );
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -69,12 +95,15 @@ export default function ChangePasswordPage() {
             </h2>
 
             <p className="mt-2 text-sm text-slate-500">
-              Your password change request was validated locally.
-              Backend integration is still pending.
+              Your password has been changed successfully.
+              Please log in again using your new password.
             </p>
 
-            <Button className="mt-6" onClick={() => navigate("/dashboard")}>
-              Back to Dashboard
+            <Button
+              className="mt-6"
+              onClick={() => navigate("/login", { replace: true })}
+            >
+              Go to Login
             </Button>
           </div>
         ) : (
@@ -127,7 +156,9 @@ export default function ChangePasswordPage() {
             )}
 
             <div className="flex justify-end">
-              <Button type="submit">Update Password</Button>
+              <Button type="submit" disabled={loading}>
+                {loading ? "Updating..." : "Update Password"}
+              </Button>
             </div>
           </form>
         )}

@@ -1,8 +1,10 @@
+
 import jwt from "jsonwebtoken";
 
 export interface JwtPayload {
   userId: string;
   roles: string[];
+  tokenVersion: number;
 }
 
 function getJwtSecret(): string {
@@ -22,5 +24,14 @@ export function generateToken(payload: JwtPayload): string {
 }
 
 export function verifyToken(token: string): JwtPayload {
-  return jwt.verify(token, getJwtSecret()) as JwtPayload;
+  const decoded = jwt.verify(token, getJwtSecret());
+
+  if (
+    typeof decoded === "string" ||
+    typeof decoded.tokenVersion !== "number"
+  ) {
+    throw new Error("INVALID_TOKEN");
+  }
+
+  return decoded as JwtPayload;
 }
