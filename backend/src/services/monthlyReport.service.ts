@@ -2,6 +2,33 @@
 import prisma from "../config/prisma";
 import { MonthlyReportQuery } from "../validators/monthlyReport.validator";
 
+const ALGERIA_OFFSET_MS = 60 * 60 * 1000;
+
+const getAlgeriaMonthRange = (year: number, month: number) => {
+  const startDate = new Date(
+    Date.UTC(year, month - 1, 1) - ALGERIA_OFFSET_MS
+  );
+
+  const endDate = new Date(
+    Date.UTC(year, month, 1) - ALGERIA_OFFSET_MS
+  );
+
+  return { startDate, endDate };
+};
+
+const getAlgeriaCurrentYearMonth = () => {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Africa/Algiers",
+    year: "numeric",
+    month: "2-digit",
+  }).formatToParts(new Date());
+
+  return {
+    year: Number(parts.find((part) => part.type === "year")?.value),
+    month: Number(parts.find((part) => part.type === "month")?.value),
+  };
+};
+
 const average = (values: number[]): number | null => {
   if (values.length === 0) return null;
 
@@ -38,12 +65,9 @@ export const getMonthlyReports = async (
 
   return Promise.all(
     reports.map(async (report) => {
-      const startDate = new Date(
-        Date.UTC(report.year, report.month - 1, 1)
-      );
-
-      const endDate = new Date(
-        Date.UTC(report.year, report.month, 1)
+      const { startDate, endDate } = getAlgeriaMonthRange(
+        report.year,
+        report.month
       );
 
       const evaluations = await prisma.evaluation.findMany({
@@ -84,9 +108,8 @@ export const generateMonthlyReports = async (
   month: number,
   generationType: "MANUAL" | "AUTOMATIC" = "MANUAL"
 ) => {
-  const now = new Date();
-  const currentYear = now.getUTCFullYear();
-  const currentMonth = now.getUTCMonth() + 1;
+  const { year: currentYear, month: currentMonth } =
+    getAlgeriaCurrentYearMonth();
 
   if (
     year > currentYear ||
@@ -95,8 +118,7 @@ export const generateMonthlyReports = async (
     throw new Error("MONTH_NOT_COMPLETED");
   }
 
-  const startDate = new Date(Date.UTC(year, month - 1, 1));
-  const endDate = new Date(Date.UTC(year, month, 1));
+  const { startDate, endDate } = getAlgeriaMonthRange(year, month);
 
   const [assistants, evaluations] = await Promise.all([
     prisma.assistant.findMany({

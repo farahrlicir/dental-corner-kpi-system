@@ -64,18 +64,23 @@ export const saveDraft = async (req: Request, res: Response) => {
   }
 };
 
+
 export const publishDraft = async (req: Request, res: Response) => {
   try {
     const idResult = kpiConfigurationIdSchema.safeParse(req.params.id);
+    const bodyResult = saveKpiConfigurationSchema.safeParse(req.body);
 
-    if (!idResult.success) {
+    if (!idResult.success || !bodyResult.success) {
       return res.status(400).json({
         success: false,
-        message: "Invalid configuration ID.",
+        message: "Invalid KPI configuration data.",
       });
     }
 
-    const data = await publishKpiConfiguration(idResult.data);
+    const data = await publishKpiConfiguration(
+      idResult.data,
+      bodyResult.data
+    );
 
     return res.status(200).json({ success: true, data });
   } catch (error) {

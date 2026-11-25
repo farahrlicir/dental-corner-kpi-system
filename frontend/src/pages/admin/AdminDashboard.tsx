@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 
 import {
   Activity,
@@ -5,11 +6,13 @@ import {
   Stethoscope,
   ClipboardCheck,
   TrendingUp,
-  MessageSquare,
   ArrowUpRight,
   ArrowDownRight,
   Clock,
+  Loader2,
 } from "lucide-react";
+
+import type { LucideIcon } from "lucide-react";
 
 import {
   Area,
@@ -23,96 +26,66 @@ import {
 
 import Card from "../../components/ui/Card";
 import Badge from "../../components/ui/Badge";
+import { apiRequest } from "../../services/api";
 
-// Temporary mock data.
-// Replace with API data when the backend is ready.
+interface DashboardStat {
+  title: string;
+  value: string;
+  description: string;
+  trend: string;
+  positive: boolean;
+  type: "assistants" | "dentists" | "evaluations" | "score";
+}
 
-const stats = [
-  {
-    title: "Total Assistants",
-    value: "12",
-    description: "Registered assistants",
-    icon: Users,
-    trend: "+2 this month",
-    positive: true,
-  },
-  {
-    title: "Total Dentists",
-    value: "4",
-    description: "Registered dentists",
-    icon: Stethoscope,
-    trend: "All active",
-    positive: true,
-  },
-  {
-    title: "Evaluations",
-    value: "86",
-    description: "This month",
-    icon: ClipboardCheck,
-    trend: "+12.5% vs last month",
-    positive: true,
-  },
-  {
-    title: "Average Score",
-    value: "87.5%",
-    description: "Clinic-wide performance",
-    icon: TrendingUp,
-    trend: "+3.2% vs last month",
-    positive: true,
-  },
-];
+interface DashboardData {
+  currentMonth: string;
+  stats: DashboardStat[];
+  performanceData: {
+    month: string;
+    score: number | null;
+  }[];
+  topAssistants: {
+    name: string;
+    evaluations: number;
+    score: number;
+  }[];
+  recentActivity: {
+    title: string;
+    description: string;
+    createdAt: string;
+  }[];
+}
 
-const performanceData = [
-  { month: "Jun", score: 78 },
-  { month: "Jul", score: 82 },
-  { month: "Aug", score: 80 },
-  { month: "Sep", score: 85 },
-  { month: "Oct", score: 83 },
-  { month: "Nov", score: 87.5 },
-];
+interface DashboardResponse {
+  success: boolean;
+  data: DashboardData;
+}
 
-const topAssistants = [
-  { name: "Sarah Ahmed", evaluations: 9, score: 96 },
-  { name: "Lina Karim", evaluations: 8, score: 93 },
-  { name: "Meriem Ali", evaluations: 7, score: 89 },
-  { name: "Nadia Benali", evaluations: 8, score: 86 },
-];
+const statIcons: Record<DashboardStat["type"], LucideIcon> = {
+  assistants: Users,
+  dentists: Stethoscope,
+  evaluations: ClipboardCheck,
+  score: TrendingUp,
+};
 
-const recentActivity = [
-  {
-    title: "New evaluation submitted",
-    description: "An assistant evaluation was completed.",
-    time: "10 minutes ago",
-  },
-  {
-    title: "Monthly report generated",
-    description: "October performance report is ready.",
-    time: "2 hours ago",
-  },
-  {
-    title: "New assistant registered",
-    description: "A new assistant account was created.",
-    time: "Yesterday",
-  },
-];
+function StatCard({ stat }: { stat: DashboardStat }) {
+  const Icon = statIcons[stat.type];
 
-function StatCard({
-  title,
-  value,
-  description,
-  icon: Icon,
-  trend,
-  positive,
-}: (typeof stats)[number]) {
   return (
     <Card padding="md" className="h-full">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-text-muted">{title}</p>
+          <p className="text-sm font-medium text-text-muted">
+            {stat.title}
+          </p>
+
           <h2 className="mt-2 text-2xl font-bold text-text-main">
-            {value}
+            {stat.value}
           </h2>
-          <p className="mt-1 text-xs text-text-muted">{description}</p>
+
+          <p className="mt-1 text-xs text-text-muted">
+            {stat.description}
+          </p>
         </div>
 
         <div className="rounded-xl bg-primary-light p-3">
@@ -121,23 +94,104 @@ function StatCard({
       </div>
 
       <div className="mt-5 flex items-center gap-1 text-xs">
-        {positive ? (
+        {stat.positive ? (
           <ArrowUpRight size={15} className="text-success" />
         ) : (
           <ArrowDownRight size={15} className="text-danger" />
         )}
-        <span className={positive ? "text-success" : "text-danger"}>
-          {trend}
+
+        <span className={stat.positive ? "text-success" : "text-danger"}>
+          {stat.trend}
         </span>
       </div>
     </Card>
   );
 }
 
+function formatRelativeTime(value: string) {
+  const date = new Date(value);
+  const seconds = Math.floor((date.getTime() - Date.now()) / 1000);
+  const formatter = new Intl.RelativeTimeFormat("en", {
+    numeric: "auto",
+  });
+
+  if (Math.abs(seconds) < 60) {
+    return formatter.format(seconds, "second");
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  if (Math.abs(minutes) < 60) {
+    return formatter.format(minutes, "minute");
+  }
+
+  const hours = Math.floor(minutes / 60);
+  if (Math.abs(hours) < 24) {
+    return formatter.format(hours, "hour");
+  }
+
+  const days = Math.floor(hours / 24);
+  return formatter.format(days, "day");
+}
+
 function AdminDashboard() {
+  const [dashboard, setDashboard] = useState<DashboardData | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+
+    const loadDashboard = async () => {
+      try {
+        const response = await apiRequest<DashboardResponse>(
+          "/admin/dashboard"
+        );
+
+        if (active) {
+          setDashboard(response.data);
+          setError("");
+        }
+      } catch (err) {
+        if (active) {
+          setError(
+            err instanceof Error
+              ? err.message
+              : "Failed to load dashboard."
+          );
+        }
+      }
+    };
+
+    loadDashboard();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  if (!dashboard && !error) {
+    return (
+      <div className="flex min-h-[300px] items-center justify-center gap-3 text-text-muted">
+        <Loader2 size={22} className="animate-spin" />
+        <span className="text-sm">Loading dashboard...</span>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card padding="lg">
+        <p className="text-sm font-medium text-danger">
+          Unable to load dashboard
+        </p>
+        <p className="mt-1 text-sm text-text-muted">{error}</p>
+      </Card>
+    );
+  }
+
+  if (!dashboard) return null;
+
   return (
     <div className="space-y-6">
-
       {/* Page heading */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
         <div>
@@ -149,13 +203,13 @@ function AdminDashboard() {
           </p>
         </div>
 
-        <Badge variant="info">November 2026</Badge>
+        <Badge variant="info">{dashboard.currentMonth}</Badge>
       </div>
 
       {/* Summary cards */}
       <section className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {stats.map((stat) => (
-          <StatCard key={stat.title} {...stat} />
+        {dashboard.stats.map((stat) => (
+          <StatCard key={stat.type} stat={stat} />
         ))}
       </section>
 
@@ -171,52 +225,68 @@ function AdminDashboard() {
         </div>
 
         <div className="h-72 w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={performanceData}>
-              <defs>
-                <linearGradient
-                  id="performanceGradient"
-                  x1="0"
-                  y1="0"
-                  x2="0"
-                  y2="1"
-                >
-                  <stop
-                    offset="0%"
-                    stopColor="#245B86"
-                    stopOpacity={0.25}
-                  />
-                  <stop
-                    offset="95%"
-                    stopColor="#245B86"
-                    stopOpacity={0}
-                  />
-                </linearGradient>
-              </defs>
+          {dashboard.performanceData.some(
+            (item) => item.score !== null
+          ) ? (
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={dashboard.performanceData}>
+                <defs>
+                  <linearGradient
+                    id="performanceGradient"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor="#245B86"
+                      stopOpacity={0.25}
+                    />
+                    <stop
+                      offset="95%"
+                      stopColor="#245B86"
+                      stopOpacity={0}
+                    />
+                  </linearGradient>
+                </defs>
 
-              <CartesianGrid strokeDasharray="3 3" stroke="#E5EAF1" />
-              <XAxis dataKey="month" stroke="#64748B" />
-              <YAxis domain={[0, 100]} stroke="#64748B" />
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="#E5EAF1"
+                />
 
-              <Tooltip
-                formatter={(value) => [`${value}%`, "Average score"]}
-              />
+                <XAxis dataKey="month" stroke="#64748B" />
+                <YAxis domain={[0, 100]} stroke="#64748B" />
 
-              <Area
-                type="monotone"
-                dataKey="score"
-                stroke="#245B86"
-                strokeWidth={3}
-                fill="url(#performanceGradient)"
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+                <Tooltip
+                  formatter={(value) =>
+                    value === null || value === undefined
+                      ? ["No data", "Average score"]
+                      : [`${Number(value).toFixed(1)}%`, "Average score"]
+                  }
+                />
+
+                <Area
+                  type="monotone"
+                  dataKey="score"
+                  stroke="#245B86"
+                  strokeWidth={3}
+                  fill="url(#performanceGradient)"
+                  connectNulls={false}
+                />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="flex h-full items-center justify-center text-sm text-text-muted">
+              No finalized monthly performance data available yet.
+            </div>
+          )}
         </div>
       </Card>
 
       {/* Lower dashboard sections */}
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-
         {/* Top assistants */}
         <Card padding="lg">
           <div className="mb-5 flex items-center justify-between">
@@ -225,44 +295,54 @@ function AdminDashboard() {
                 Top Performing Assistants
               </h2>
               <p className="mt-1 text-sm text-text-muted">
-                Based on monthly average scores.
+                Based on the latest finalized monthly reports.
               </p>
             </div>
+
             <Activity size={20} className="text-primary" />
           </div>
 
-          <div className="space-y-5">
-            {topAssistants.map((assistant, index) => (
-              <div key={assistant.name}>
-                <div className="mb-2 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-light text-sm font-semibold text-primary">
-                      {index + 1}
-                    </span>
-                    <div>
-                      <p className="text-sm font-medium text-text-main">
-                        {assistant.name}
-                      </p>
-                      <p className="text-xs text-text-muted">
-                        {assistant.evaluations} evaluations
-                      </p>
+          {dashboard.topAssistants.length > 0 ? (
+            <div className="space-y-5">
+              {dashboard.topAssistants.map((assistant, index) => (
+                <div key={`${assistant.name}-${index}`}>
+                  <div className="mb-2 flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-primary-light text-sm font-semibold text-primary">
+                        {index + 1}
+                      </span>
+
+                      <div>
+                        <p className="text-sm font-medium text-text-main">
+                          {assistant.name}
+                        </p>
+                        <p className="text-xs text-text-muted">
+                          {assistant.evaluations} evaluations
+                        </p>
+                      </div>
                     </div>
+
+                    <span className="text-sm font-semibold text-text-main">
+                      {assistant.score.toFixed(1)}%
+                    </span>
                   </div>
 
-                  <span className="text-sm font-semibold text-text-main">
-                    {assistant.score}%
-                  </span>
+                  <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
+                    <div
+                      className="h-full rounded-full bg-accent"
+                      style={{
+                        width: `${Math.min(100, Math.max(0, assistant.score))}%`,
+                      }}
+                    />
+                  </div>
                 </div>
-
-                <div className="h-2 overflow-hidden rounded-full bg-surface-muted">
-                  <div
-                    className="h-full rounded-full bg-accent"
-                    style={{ width: `${assistant.score}%` }}
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-text-muted">
+              No finalized assistant reports available yet.
+            </p>
+          )}
         </Card>
 
         {/* Recent activity */}
@@ -273,44 +353,51 @@ function AdminDashboard() {
                 Recent Activity
               </h2>
               <p className="mt-1 text-sm text-text-muted">
-                Latest clinic activities.
+                Latest recorded clinic activities.
               </p>
             </div>
+
             <Clock size={20} className="text-primary" />
           </div>
 
-          <div className="space-y-5">
-            {recentActivity.map((activity, index) => (
-              <div key={index} className="flex gap-3">
-                <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-light">
-                  {index === 0 ? (
-                    <ClipboardCheck size={17} className="text-primary" />
-                  ) : index === 1 ? (
-                    <Activity size={17} className="text-primary" />
-                  ) : (
-                    <Users size={17} className="text-primary" />
-                  )}
-                </div>
+          {dashboard.recentActivity.length > 0 ? (
+            <div className="space-y-5">
+              {dashboard.recentActivity.map((activity, index) => (
+                <div
+                  key={`${activity.createdAt}-${index}`}
+                  className="flex gap-3"
+                >
+                  <div className="mt-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary-light">
+                    {index === 0 ? (
+                      <ClipboardCheck size={17} className="text-primary" />
+                    ) : (
+                      <Users size={17} className="text-primary" />
+                    )}
+                  </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-text-main">
-                    {activity.title}
-                  </p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    {activity.description}
-                  </p>
-                  <p className="mt-2 text-xs text-text-light">
-                    {activity.time}
-                  </p>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-text-main">
+                      {activity.title}
+                    </p>
+
+                    <p className="mt-1 text-xs text-text-muted">
+                      {activity.description}
+                    </p>
+
+                    <p className="mt-2 text-xs text-text-light">
+                      {formatRelativeTime(activity.createdAt)}
+                    </p>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="py-8 text-center text-sm text-text-muted">
+              No recent activity recorded yet.
+            </p>
+          )}
         </Card>
       </div>
-
-     
-
     </div>
   );
 }

@@ -477,10 +477,9 @@ export default function EvaluationHistoryPage() {
         </h2>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
+          <table className="w-full min-w-[750px] text-left text-sm">
             <thead>
               <tr className="border-b border-slate-100 text-slate-500">
-                <th className="pb-3 font-medium">Evaluation ID</th>
                 <th className="pb-3 font-medium">Assistant</th>
                 <th className="pb-3 font-medium">Dentist</th>
                 <th className="pb-3 font-medium">Date</th>
@@ -496,10 +495,6 @@ export default function EvaluationHistoryPage() {
                   key={evaluation.id}
                   className="border-b border-slate-50 last:border-0"
                 >
-                  <td className="py-4 font-medium text-slate-700">
-                    {evaluation.id.slice(0, 8)}
-                  </td>
-
                   <td className="py-4 text-slate-700">
                     {evaluation.assistant.user.fullName}
                   </td>
@@ -556,7 +551,7 @@ export default function EvaluationHistoryPage() {
               {filteredEvaluations.length === 0 && (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={6}
                     className="py-10 text-center text-slate-500"
                   >
                     {activeTab === "pending"
@@ -579,9 +574,6 @@ export default function EvaluationHistoryPage() {
                 <h2 className="text-lg font-semibold text-slate-800">
                   Evaluation Review
                 </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  {selectedEvaluation.id}
-                </p>
                 <p className="mt-1 text-xs text-slate-400">
                   KPI Configuration v{selectedEvaluation.configuration.version}
                 </p>

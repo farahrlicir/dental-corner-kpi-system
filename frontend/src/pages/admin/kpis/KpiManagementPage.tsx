@@ -8,6 +8,8 @@ import {
   Settings2,
   CheckCircle2,
   AlertCircle,
+  Trash2,
+  ChevronDown,
 } from "lucide-react";
 
 import Card from "../../../components/ui/Card";
@@ -47,6 +49,8 @@ function KpiManagementPage() {
   const [draft, setDraft] = useState<KpiCriterion[]>([]);
   const [draftId, setDraftId] = useState<string | null>(null);
   const [versions, setVersions] = useState<KpiConfiguration[]>([]);
+  const [expandedVersion, setExpandedVersion] = useState<string | null>(null);
+
   const [showAddForm, setShowAddForm] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -64,13 +68,21 @@ function KpiManagementPage() {
     0
   );
 
+  const hasDuplicateNames =
+    new Set(
+      draft.map((criterion) => criterion.name.trim().toLowerCase())
+    ).size !== draft.length;
+
   const canPublish =
     draft.length > 0 &&
+    !hasDuplicateNames &&
     Math.abs(totalWeight - 100) < 0.001 &&
     draft.every(
       (criterion) =>
         criterion.name.trim().length >= 2 &&
-        criterion.weight > 0
+        Number.isFinite(criterion.weight) &&
+        criterion.weight > 0 &&
+        criterion.weight <= 100
     );
 
   const activeVersion = versions.find(
@@ -138,6 +150,22 @@ function KpiManagementPage() {
     );
   }
 
+  function deleteCriterion(id: string) {
+    const criterion = draft.find((item) => item.id === id);
+
+    if (!criterion) return;
+
+    const confirmed = window.confirm(
+      `Delete "${criterion.name}" from this draft? This change will take effect after saving.`
+    );
+
+    if (!confirmed) return;
+
+    setDraft((previous) =>
+      previous.filter((item) => item.id !== id)
+    );
+  }
+
   function addCriterion() {
     const name = newCriterion.name.trim();
     const weight = Number(newCriterion.weight);
@@ -179,6 +207,16 @@ function KpiManagementPage() {
   async function saveDraft() {
     if (!draftId) {
       alert("No draft configuration exists yet.");
+      return;
+    }
+
+    if (draft.length === 0) {
+      alert("A configuration must contain at least one criterion.");
+      return;
+    }
+
+    if (hasDuplicateNames) {
+      alert("Criterion names must be unique.");
       return;
     }
 
@@ -224,30 +262,41 @@ function KpiManagementPage() {
     }
   }
 
-  async function publishConfiguration() {
-    if (!draftId || !canPublish) return;
+ 
+async function publishConfiguration() {
+  if (!draftId || !canPublish) return;
 
-    try {
-      setPublishing(true);
-      setError("");
+  try {
+    setPublishing(true);
+    setError("");
 
-      await apiRequest(
-        `/kpi/configurations/${draftId}/publish`,
-        { method: "POST" }
-      );
+    await apiRequest(
+      `/kpi/configurations/${draftId}/publish`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          criteria: draft.map((criterion, index) => ({
+            name: criterion.name.trim(),
+            weight: criterion.weight,
+            displayOrder: index + 1,
+          })),
+        }),
+      }
+    );
 
-      await loadConfigurations();
-      alert("KPI configuration published successfully.");
-    } catch (err) {
-      setError(
-        err instanceof Error
-          ? err.message
-          : "Failed to publish configuration."
-      );
-    } finally {
-      setPublishing(false);
-    }
+    await loadConfigurations();
+    alert("KPI configuration published successfully.");
+  } catch (err) {
+    setError(
+      err instanceof Error
+        ? err.message
+        : "Failed to publish configuration."
+    );
+  } finally {
+    setPublishing(false);
   }
+}
+
 
   async function createNewDraft() {
     try {
@@ -270,6 +319,12 @@ function KpiManagementPage() {
     } finally {
       setCreatingDraft(false);
     }
+  }
+
+  function toggleVersion(versionId: string) {
+    setExpandedVersion((previous) =>
+      previous === versionId ? null : versionId
+    );
   }
 
   if (loading) {
@@ -332,7 +387,7 @@ function KpiManagementPage() {
               Evaluation Criteria
             </h2>
             <p className="mt-1 text-sm text-text-muted">
-              Edit names and weights or add new criteria.
+              Edit names and weights or add and remove criteria.
             </p>
           </div>
 
@@ -428,54 +483,80 @@ function KpiManagementPage() {
             )}
 
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[550px] text-left">
+              <table className="w-full min-w-[600px] text-left">
                 <thead>
                   <tr className="border-b border-border text-xs text-text-muted">
                     <th className="pb-3 font-medium">Criterion</th>
                     <th className="pb-3 text-right font-medium">
                       Weight (%)
                     </th>
+                    <th className="w-16 pb-3 text-right font-medium">
+                      Action
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
-                  {draft.map((criterion) => (
-                    <tr
-                      key={criterion.id}
-                      className="border-b border-border last:border-0"
-                    >
-                      <td className="py-3 pr-4">
-                        <input
-                          value={criterion.name}
-                          onChange={(event) =>
-                            updateCriterion(
-                              criterion.id,
-                              "name",
-                              event.target.value
-                            )
-                          }
-                          className="w-full rounded-control border border-transparent bg-transparent px-2 py-2 text-sm text-text-main outline-none focus:border-primary focus:bg-surface"
-                        />
+                  {draft.length === 0 ? (
+                    <tr>
+                      <td
+                        colSpan={3}
+                        className="py-8 text-center text-sm text-text-muted"
+                      >
+                        No criteria in this draft. Add a criterion to continue.
                       </td>
-                      <td className="py-3">
-                        <div className="flex justify-end">
+                    </tr>
+                  ) : (
+                    draft.map((criterion) => (
+                      <tr
+                        key={criterion.id}
+                        className="border-b border-border last:border-0"
+                      >
+                        <td className="py-3 pr-4">
                           <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={criterion.weight}
+                            value={criterion.name}
                             onChange={(event) =>
                               updateCriterion(
                                 criterion.id,
-                                "weight",
+                                "name",
                                 event.target.value
                               )
                             }
-                            className="w-24 rounded-control border border-border bg-surface px-3 py-2 text-right text-sm outline-none focus:border-primary"
+                            className="w-full rounded-control border border-transparent bg-transparent px-2 py-2 text-sm text-text-main outline-none focus:border-primary focus:bg-surface"
                           />
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="py-3">
+                          <div className="flex justify-end">
+                            <input
+                              type="number"
+                              min="0"
+                              max="100"
+                              value={criterion.weight}
+                              onChange={(event) =>
+                                updateCriterion(
+                                  criterion.id,
+                                  "weight",
+                                  event.target.value
+                                )
+                              }
+                              className="w-24 rounded-control border border-border bg-surface px-3 py-2 text-right text-sm outline-none focus:border-primary"
+                            />
+                          </div>
+                        </td>
+                        <td className="py-3 text-right">
+                          <button
+                            type="button"
+                            onClick={() => deleteCriterion(criterion.id)}
+                            disabled={saving || publishing}
+                            title="Delete criterion"
+                            aria-label={`Delete ${criterion.name}`}
+                            className="rounded-lg p-2 text-text-muted transition hover:bg-red-50 hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Trash2 size={17} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -498,7 +579,7 @@ function KpiManagementPage() {
                       : "text-danger"
                   }`}
                 >
-                  {totalWeight}%
+                  {totalWeight.toFixed(2).replace(/\.?0+$/, "")}%
                 </span>
 
                 {Math.abs(totalWeight - 100) < 0.001 ? (
@@ -509,9 +590,15 @@ function KpiManagementPage() {
               </div>
             </div>
 
+            {hasDuplicateNames && (
+              <p className="mt-3 text-sm text-danger">
+                Criterion names must be unique.
+              </p>
+            )}
+
             <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <p className="text-xs text-text-muted">
-                Save your changes before publishing.
+                Publishing automatically saves your latest changes.
               </p>
 
               <div className="flex gap-2">
@@ -547,7 +634,7 @@ function KpiManagementPage() {
               Configuration History
             </h2>
             <p className="mt-1 text-sm text-text-muted">
-              Previously published KPI configurations.
+              Select a version to view its criteria and weights.
             </p>
           </div>
         </div>
@@ -558,33 +645,116 @@ function KpiManagementPage() {
           </p>
         ) : (
           <div className="space-y-3">
-            {versions.map((version) => (
-              <div
-                key={version.id}
-                className="flex flex-col gap-3 rounded-xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between"
-              >
-                <div>
-                  <p className="font-medium text-text-main">
-                    Configuration Version {version.version}
-                  </p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    Published:{" "}
-                    {version.publishedAt
-                      ? new Date(version.publishedAt).toLocaleString()
-                      : "—"}
-                  </p>
-                  <p className="mt-1 text-xs text-text-muted">
-                    {version.criteria.length} evaluation criteria
-                  </p>
-                </div>
+            {versions.map((version) => {
+              const isExpanded = expandedVersion === version.id;
 
-                {version.status === "PUBLISHED" ? (
-                  <Badge variant="success">Published</Badge>
-                ) : (
-                  <Badge variant="neutral">Archived</Badge>
-                )}
-              </div>
-            ))}
+              return (
+                <div
+                  key={version.id}
+                  className="overflow-hidden rounded-xl border border-border"
+                >
+                  <button
+                    type="button"
+                    onClick={() => toggleVersion(version.id)}
+                    aria-expanded={isExpanded}
+                    className="flex w-full flex-col gap-3 p-4 text-left transition hover:bg-surface-muted sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div>
+                      <p className="font-medium text-text-main">
+                        Configuration Version {version.version}
+                      </p>
+                      <p className="mt-1 text-xs text-text-muted">
+                        Published:{" "}
+                        {version.publishedAt
+                          ? new Date(version.publishedAt).toLocaleString()
+                          : "—"}
+                      </p>
+                      <p className="mt-1 text-xs text-text-muted">
+                        {version.criteria.length} evaluation criteria
+                      </p>
+                    </div>
+
+                    <div className="flex items-center justify-between gap-3 sm:justify-end">
+                      {version.status === "PUBLISHED" ? (
+                        <Badge variant="success">Published</Badge>
+                      ) : (
+                        <Badge variant="neutral">Archived</Badge>
+                      )}
+
+                      <ChevronDown
+                        size={18}
+                        className={`text-text-muted transition-transform ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </div>
+                  </button>
+
+                  {isExpanded && (
+                    <div className="border-t border-border bg-surface-muted p-4">
+                      {version.criteria.length === 0 ? (
+                        <p className="py-3 text-center text-sm text-text-muted">
+                          No criteria found for this version.
+                        </p>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full min-w-[350px] text-left">
+                            <thead>
+                              <tr className="border-b border-border text-xs text-text-muted">
+                                <th className="pb-3 font-medium">
+                                  Criterion
+                                </th>
+                                <th className="pb-3 text-right font-medium">
+                                  Weight (%)
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {[...version.criteria]
+                                .sort(
+                                  (a, b) =>
+                                    a.displayOrder - b.displayOrder
+                                )
+                                .map((criterion) => (
+                                  <tr
+                                    key={criterion.id}
+                                    className="border-b border-border last:border-0"
+                                  >
+                                    <td className="py-3 pr-4 text-sm text-text-main">
+                                      {criterion.criterionName}
+                                    </td>
+                                    <td className="py-3 text-right text-sm font-medium text-text-main">
+                                      {Number(criterion.weight)}%
+                                    </td>
+                                  </tr>
+                                ))}
+                            </tbody>
+                            <tfoot>
+                              <tr>
+                                <td className="pt-3 text-sm font-semibold text-text-main">
+                                  Total
+                                </td>
+                                <td className="pt-3 text-right text-sm font-semibold text-text-main">
+                                  {version.criteria
+                                    .reduce(
+                                      (total, criterion) =>
+                                        total + Number(criterion.weight),
+                                      0
+                                    )
+                                    .toFixed(2)
+                                    .replace(/\.?0+$/, "")}
+                                  %
+                                </td>
+                              </tr>
+                            </tfoot>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
       </Card>

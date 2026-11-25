@@ -99,13 +99,14 @@ export const saveKpiConfiguration = async (
   });
 };
 
+
 export const publishKpiConfiguration = async (
-  configurationId: string
+  configurationId: string,
+  data: SaveKpiConfigurationInput
 ) => {
   return prisma.$transaction(async (tx) => {
     const configuration = await tx.kpiConfiguration.findUnique({
       where: { id: configurationId },
-      include: { criteria: true },
     });
 
     if (!configuration) {
@@ -116,11 +117,26 @@ export const publishKpiConfiguration = async (
       throw new Error("KPI_CONFIGURATION_NOT_EDITABLE");
     }
 
-    if (configuration.criteria.length === 0) {
+    if (data.criteria.length === 0) {
       throw new Error("EMPTY_KPI_CONFIGURATION");
     }
 
-    const totalWeight = configuration.criteria.reduce(
+    const normalizedNames = data.criteria.map((item) =>
+      item.name.trim().toLowerCase()
+    );
+
+    if (new Set(normalizedNames).size !== normalizedNames.length) {
+      throw new Error("DUPLICATE_KPI_CRITERION");
+    }
+
+    if (
+      new Set(data.criteria.map((item) => item.displayOrder)).size !==
+      data.criteria.length
+    ) {
+      throw new Error("DUPLICATE_DISPLAY_ORDER");
+    }
+
+    const totalWeight = data.criteria.reduce(
       (total, item) => total + Number(item.weight),
       0
     );
@@ -129,6 +145,30 @@ export const publishKpiConfiguration = async (
       throw new Error("KPI_WEIGHTS_MUST_EQUAL_100");
     }
 
+    // Save the latest criteria and weights
+    await tx.kpiConfigurationItem.deleteMany({
+      where: { configurationId },
+    });
+
+    for (const item of data.criteria) {
+      const criterion = await tx.kpiCriterion.upsert({
+        where: { name: item.name },
+        update: {},
+        create: { name: item.name },
+      });
+
+      await tx.kpiConfigurationItem.create({
+        data: {
+          configurationId,
+          criterionId: criterion.id,
+          criterionName: item.name,
+          weight: item.weight,
+          displayOrder: item.displayOrder,
+        },
+      });
+    }
+
+    // Publish the updated configuration
     return tx.kpiConfiguration.update({
       where: { id: configurationId },
       data: {

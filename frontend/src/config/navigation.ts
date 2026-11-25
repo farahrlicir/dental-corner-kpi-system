@@ -5,8 +5,6 @@ import {
   Stethoscope,
   ClipboardList,
   ChartNoAxesCombined,
-  MessageSquare,
-  Settings,
   History,
 } from "lucide-react";
 
@@ -59,12 +57,6 @@ export const navigationItems: NavItem[] = [
     label: "Reports",
     path: "/reports",
     icon: ChartNoAxesCombined,
-    allowedRoles: ["ADMIN"],
-  },
-  {
-    label: "Settings",
-    path: "/settings",
-    icon: Settings,
     allowedRoles: ["ADMIN"],
   },
 ];

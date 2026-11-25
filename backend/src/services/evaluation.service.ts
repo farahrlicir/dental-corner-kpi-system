@@ -235,14 +235,14 @@ export const getPendingEvaluations = async () => {
         },
       },
       configuration: {
-  include: {
-    criteria: {
-      orderBy: {
-        displayOrder: "asc",
+        include: {
+          criteria: {
+            orderBy: {
+              displayOrder: "asc",
+            },
+          },
+        },
       },
-    },
-  },
-},
       items: {
         include: {
           configurationItem: true,
@@ -427,10 +427,15 @@ export const getEvaluationHistory = async (filters: {
 
   if (filters.month) {
     const [year, month] = filters.month.split("-").map(Number);
+    const algeriaOffset = 60 * 60 * 1000;
 
     where.submittedAt = {
-      gte: new Date(Date.UTC(year, month - 1, 1)),
-      lt: new Date(Date.UTC(year, month, 1)),
+      gte: new Date(
+        Date.UTC(year, month - 1, 1) - algeriaOffset
+      ),
+      lt: new Date(
+        Date.UTC(year, month, 1) - algeriaOffset
+      ),
     };
   }
 

@@ -1,5 +1,5 @@
 
-import { NavLink } from "react-router-dom";
+import { NavLink, useNavigate } from "react-router-dom";
 import {
   PanelLeftClose,
   PanelLeftOpen,
@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import { navigationItems } from "../../config/navigation";
+import { useAuth } from "../../context/AuthContext";
 import type { AuthUser } from "../../types/auth";
 
 interface SidebarProps {
@@ -25,9 +26,41 @@ function Sidebar({
   mobileOpen,
   onMobileClose,
 }: SidebarProps) {
-  const visibleItems = navigationItems.filter((item) =>
-    item.allowedRoles.some((role) => user.roles.includes(role))
-  );
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+
+  const isAdmin = user.roles.includes("ADMIN");
+  const isDentist = user.roles.includes("DENTIST");
+
+  const visibleItems = navigationItems.filter((item) => {
+    // Preserve the Admin navigation exactly as before.
+    if (isAdmin) {
+      return item.allowedRoles.some((role) =>
+        user.roles.includes(role)
+      );
+    }
+
+    // Dentists without the Admin role see only Evaluations.
+    if (isDentist) {
+      return item.label === "Evaluations" &&
+        item.allowedRoles.includes("DENTIST");
+    }
+
+    // Keep other roles unchanged.
+    return item.allowedRoles.some((role) =>
+      user.roles.includes(role)
+    );
+  });
+
+  const handleLogout = async () => {
+    onMobileClose();
+
+    try {
+      await logout();
+    } finally {
+      navigate("/", { replace: true });
+    }
+  };
 
   return (
     <>
@@ -46,7 +79,7 @@ function Sidebar({
           {!collapsed && (
             <div>
               <h1 className="text-lg font-bold text-primary">
-                DentalCare
+                DentalCorner
               </h1>
               <p className="text-xs text-text-muted">
                 Clinic Management
@@ -100,7 +133,6 @@ function Sidebar({
                 }
               >
                 <Icon size={20} strokeWidth={1.8} />
-
                 {!collapsed && <span>{item.label}</span>}
               </NavLink>
             );
@@ -110,6 +142,7 @@ function Sidebar({
         {/* Footer */}
         <div className="border-t border-border p-3">
           <button
+            onClick={handleLogout}
             className="flex w-full items-center gap-3 rounded-lg px-3 py-3 text-sm text-text-muted hover:bg-surface-muted"
             title="Logout"
           >

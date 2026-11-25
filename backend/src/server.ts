@@ -14,6 +14,7 @@ import evaluationRoutes from "./routes/evaluation.routes";
 import monthlyReportRoutes from "./routes/monthlyReport.routes";
 import assistantReportRoutes from "./routes/assistantReport.routes";
 import { startMonthlyReportScheduler } from "./jobs/monthlyReport.scheduler";
+import adminDashboardRoutes from "./routes/adminDashboard.routes";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -42,6 +43,7 @@ app.use("/api/kpi", adminKpiRoutes);
 app.use("/api/evaluations", evaluationRoutes);
 app.use("/api/monthly-reports", monthlyReportRoutes);
 app.use("/api/assistant-reports", assistantReportRoutes);
+app.use("/api/admin/dashboard", adminDashboardRoutes);
 
 // Health check
 app.get("/api/health", (req, res) => {
