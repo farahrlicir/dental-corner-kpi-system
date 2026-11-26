@@ -1,14 +1,14 @@
+
 import { Request, Response } from "express";
 
 import {
   monthlyReportQuerySchema,
-  generateMonthlyReportSchema,
   finalizeMonthlyReportSchema,
 } from "../validators/monthlyReport.validator";
 
 import {
   getMonthlyReports,
-  generateMonthlyReports,
+  generatePreviousMonthAutomaticReports,
   finalizeMonthlyReport,
 } from "../services/monthlyReport.service";
 
@@ -43,29 +43,16 @@ export const getMonthlyReportsController = async (
   }
 };
 
-export const generateMonthlyReportsController = async (
+export const generateMissingMonthlyReportsController = async (
   req: Request,
   res: Response
 ) => {
   try {
-    const validation = generateMonthlyReportSchema.safeParse(req.body);
-
-    if (!validation.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Invalid report generation data.",
-        errors: validation.error.flatten(),
-      });
-    }
-
-    const result = await generateMonthlyReports(
-      validation.data.year,
-      validation.data.month
-    );
+    const result = await generatePreviousMonthAutomaticReports();
 
     return res.status(200).json({
       success: true,
-      message: "Monthly reports generated successfully.",
+      message: "Missing automatic monthly reports processed successfully.",
       data: result,
     });
   } catch (error) {
@@ -76,11 +63,11 @@ export const generateMonthlyReportsController = async (
       });
     }
 
-    console.error("Generate monthly reports error:", error);
+    console.error("Generate missing monthly reports error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Failed to generate monthly reports.",
+      message: "Failed to generate missing monthly reports.",
     });
   }
 };

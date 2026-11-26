@@ -99,7 +99,6 @@ export const saveKpiConfiguration = async (
   });
 };
 
-
 export const publishKpiConfiguration = async (
   configurationId: string,
   data: SaveKpiConfigurationInput
@@ -145,7 +144,7 @@ export const publishKpiConfiguration = async (
       throw new Error("KPI_WEIGHTS_MUST_EQUAL_100");
     }
 
-    // Save the latest criteria and weights
+    // Save the latest criteria and weights.
     await tx.kpiConfigurationItem.deleteMany({
       where: { configurationId },
     });
@@ -168,7 +167,13 @@ export const publishKpiConfiguration = async (
       });
     }
 
-    // Publish the updated configuration
+    // Archive all previously published configurations.
+    await tx.kpiConfiguration.updateMany({
+      where: { status: "PUBLISHED" },
+      data: { status: "ARCHIVED" },
+    });
+
+    // Publish the new configuration.
     return tx.kpiConfiguration.update({
       where: { id: configurationId },
       data: {
@@ -200,10 +205,6 @@ export const createKpiDraft = async () => {
       include: { criteria: true },
     });
 
-    if (!latestPublished) {
-      throw new Error("NO_PUBLISHED_KPI_CONFIGURATION");
-    }
-
     const newVersion = await tx.kpiConfiguration.aggregate({
       _max: { version: true },
     });
@@ -213,12 +214,13 @@ export const createKpiDraft = async () => {
         version: (newVersion._max.version ?? 0) + 1,
         status: "DRAFT",
         criteria: {
-          create: latestPublished.criteria.map((item) => ({
-            criterionId: item.criterionId,
-            criterionName: item.criterionName,
-            weight: item.weight,
-            displayOrder: item.displayOrder,
-          })),
+          create:
+            latestPublished?.criteria.map((item) => ({
+              criterionId: item.criterionId,
+              criterionName: item.criterionName,
+              weight: item.weight,
+              displayOrder: item.displayOrder,
+            })) ?? [],
         },
       },
       include: {

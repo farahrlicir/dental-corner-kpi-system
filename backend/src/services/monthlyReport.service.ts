@@ -29,6 +29,17 @@ const getAlgeriaCurrentYearMonth = () => {
   };
 };
 
+export const generatePreviousMonthAutomaticReports = async () => {
+  const { year, month } = getAlgeriaCurrentYearMonth();
+
+  const previousMonth = new Date(Date.UTC(year, month - 2, 1));
+
+  return generateMonthlyReports(
+    previousMonth.getUTCFullYear(),
+    previousMonth.getUTCMonth() + 1
+  );
+};
+
 const average = (values: number[]): number | null => {
   if (values.length === 0) return null;
 
@@ -105,9 +116,10 @@ export const getMonthlyReports = async (
 
 export const generateMonthlyReports = async (
   year: number,
-  month: number,
-  generationType: "MANUAL" | "AUTOMATIC" = "MANUAL"
+  month: number
 ) => {
+  const generationType = "AUTOMATIC" as const;
+
   const { year: currentYear, month: currentMonth } =
     getAlgeriaCurrentYearMonth();
 

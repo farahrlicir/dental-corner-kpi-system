@@ -1,6 +1,6 @@
 
 import cron from "node-cron";
-import { generateMonthlyReports } from "../services/monthlyReport.service";
+import { generatePreviousMonthAutomaticReports } from "../services/monthlyReport.service";
 
 const TIME_ZONE = "Africa/Algiers";
 
@@ -9,38 +9,9 @@ export const startMonthlyReportScheduler = () => {
     "5 1 1 * *",
     async () => {
       try {
-        // Get the current year and month in Algeria's timezone.
-        const parts = new Intl.DateTimeFormat("en-US", {
-          timeZone: TIME_ZONE,
-          year: "numeric",
-          month: "2-digit",
-        }).formatToParts(new Date());
+        console.log("Starting automatic monthly report generation...");
 
-        const currentYear = Number(
-          parts.find((part) => part.type === "year")?.value
-        );
-
-        const currentMonth = Number(
-          parts.find((part) => part.type === "month")?.value
-        );
-
-        // Generate the previous month's reports.
-        const previousDate = new Date(
-          Date.UTC(currentYear, currentMonth - 2, 1)
-        );
-
-        const year = previousDate.getUTCFullYear();
-        const month = previousDate.getUTCMonth() + 1;
-
-        console.log(
-          `Starting automatic monthly reports for ${year}-${String(month).padStart(2, "0")}...`
-        );
-
-        const result = await generateMonthlyReports(
-          year,
-          month,
-          "AUTOMATIC"
-        );
+        const result = await generatePreviousMonthAutomaticReports();
 
         console.log("Automatic monthly reports completed:", result);
       } catch (error) {

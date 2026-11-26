@@ -6,10 +6,10 @@ import {
 } from "../validators/evaluation.validator";
 
 const ratingScore: Record<number, number> = {
-  1: 60,
-  2: 70,
-  3: 80,
-  4: 90,
+  1: 20,
+  2: 40,
+  3: 60,
+  4: 80,
   5: 100,
 };
 

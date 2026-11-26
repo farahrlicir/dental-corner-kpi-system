@@ -1,10 +1,11 @@
+
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   FileText,
   Download,
-  Eye, 
-  Search, 
-  X, 
+  Eye,
+  Search,
+  X,
   TrendingUp,
   ClipboardList,
   RefreshCw,
@@ -49,6 +50,12 @@ interface ApiResponse<T> {
   message?: string;
 }
 
+interface GenerationResult {
+  generated: number;
+  updated: number;
+  skipped: number;
+}
+
 export default function MonthlyReportsPage() {
   const [reports, setReports] = useState<MonthlyReport[]>([]);
   const [search, setSearch] = useState("");
@@ -56,15 +63,6 @@ export default function MonthlyReportsPage() {
   const [monthFilter, setMonthFilter] = useState("all");
   const [selectedReport, setSelectedReport] =
     useState<MonthlyReport | null>(null);
-
-  const previousMonth = new Date();
-  previousMonth.setMonth(previousMonth.getMonth() - 1);
-
-  const [generationMonth, setGenerationMonth] = useState(
-    `${previousMonth.getFullYear()}-${String(
-      previousMonth.getMonth() + 1
-    ).padStart(2, "0")}`
-  );
 
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
@@ -168,27 +166,28 @@ export default function MonthlyReportsPage() {
       ) / scoredReports.length
     : 0;
 
-  const generateReports = async () => {
-    if (!generationMonth) return;
-
-    const [year, month] = generationMonth.split("-").map(Number);
+  const recoverPreviousMonthReports = async () => {
+    if (
+      !window.confirm(
+        "Recover the previous month's automatic reports? Missing reports will be created, existing draft reports will be refreshed, and finalized reports will remain unchanged."
+      )
+    ) {
+      return;
+    }
 
     try {
       setActionLoading(true);
       setError("");
       setSuccess("");
 
-      const response = await apiRequest<ApiResponse<{
-        generated: number;
-        updated: number;
-        skipped: number;
-      }>>("/monthly-reports/generate", {
+      const response = await apiRequest<
+        ApiResponse<GenerationResult>
+      >("/monthly-reports/generate-missing", {
         method: "POST",
-        body: JSON.stringify({ year, month }),
       });
 
       setSuccess(
-        `Generation complete: ${response.data.generated} created, ${response.data.updated} updated, ${response.data.skipped} finalized reports skipped.`
+        `Recovery complete: ${response.data.generated} created, ${response.data.updated} updated, ${response.data.skipped} finalized reports skipped.`
       );
 
       await fetchReports();
@@ -196,7 +195,7 @@ export default function MonthlyReportsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "Failed to generate monthly reports."
+          : "Failed to recover monthly reports."
       );
     } finally {
       setActionLoading(false);
@@ -269,22 +268,16 @@ export default function MonthlyReportsPage() {
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="month"
-            value={generationMonth}
-            onChange={(e) => setGenerationMonth(e.target.value)}
-            className="rounded-lg border border-slate-200 px-3 py-2 text-sm"
+        <Button
+          onClick={recoverPreviousMonthReports}
+          disabled={actionLoading}
+        >
+          <RefreshCw
+            size={16}
+            className={actionLoading ? "animate-spin" : ""}
           />
-
-          <Button
-            onClick={generateReports}
-            disabled={actionLoading || !generationMonth}
-          >
-            <RefreshCw size={16} />
-            Generate Reports
-          </Button>
-        </div>
+          Recover Previous Month Reports
+        </Button>
       </div>
 
       {error && (
@@ -676,6 +669,6 @@ export default function MonthlyReportsPage() {
           </div>
         </div>
       )}
-    </div> 
-  ); 
+    </div>
+  );
 }

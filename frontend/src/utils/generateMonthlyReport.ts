@@ -16,6 +16,14 @@ interface MonthlyReportData {
   observations: string[];
 }
 
+const calculateSalaryBonus = (score: number | null): number => {
+  if (score === null || score < 75) return 0;
+  if (score < 85) return 5;
+  if (score < 90) return 10;
+  if (score < 100) return 15;
+  return 20;
+};
+
 export function generateMonthlyReport(report: MonthlyReportData) {
   const doc = new jsPDF();
 
@@ -25,6 +33,8 @@ export function generateMonthlyReport(report: MonthlyReportData) {
     month: "long",
     year: "numeric",
   });
+
+  const salaryBonus = calculateSalaryBonus(report.averageScore);
 
   doc.setFillColor(36, 91, 134);
   doc.rect(0, 0, 210, 38, "F");
@@ -41,11 +51,14 @@ export function generateMonthlyReport(report: MonthlyReportData) {
   doc.text(`Assistant: ${report.assistant}`, 15, 51);
   doc.text(`Reporting Period: ${monthLabel}`, 15, 59);
 
+  // Performance and salary bonus summary
   doc.setFillColor(240, 246, 251);
-  doc.roundedRect(15, 70, 180, 28, 3, 3, "F");
+  doc.roundedRect(15, 70, 180, 40, 3, 3, "F");
 
   doc.setFontSize(10);
+  doc.setTextColor(30, 41, 59);
   doc.text("FINAL PERFORMANCE SCORE", 22, 81);
+  doc.text("SALARY BONUS", 120, 81);
 
   doc.setFontSize(20);
   doc.setTextColor(36, 91, 134);
@@ -54,15 +67,17 @@ export function generateMonthlyReport(report: MonthlyReportData) {
       ? "N/A"
       : `${report.averageScore.toFixed(1)}%`,
     22,
-    92
+    94
   );
 
-  doc.setFontSize(10);
+  doc.text(`${salaryBonus}%`, 120, 94);
+
+  doc.setFontSize(9);
   doc.setTextColor(30, 41, 59);
-  doc.text(`Evaluations: ${report.evaluationCount}`, 120, 87);
+  doc.text(`Evaluations: ${report.evaluationCount}`, 22, 104);
 
   autoTable(doc, {
-    startY: 108,
+    startY: 118,
     head: [["KPI Criterion", "Weight", "Performance"]],
     body: report.kpiScores.map((criterion) => [
       criterion.criterionName,
@@ -85,7 +100,7 @@ export function generateMonthlyReport(report: MonthlyReportData) {
 
   const finalY =
     (doc as jsPDF & { lastAutoTable?: { finalY: number } })
-      .lastAutoTable?.finalY ?? 108;
+      .lastAutoTable?.finalY ?? 118;
 
   let observationY = finalY + 12;
 

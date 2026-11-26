@@ -262,41 +262,39 @@ function KpiManagementPage() {
     }
   }
 
- 
-async function publishConfiguration() {
-  if (!draftId || !canPublish) return;
+  async function publishConfiguration() {
+    if (!draftId || !canPublish) return;
 
-  try {
-    setPublishing(true);
-    setError("");
+    try {
+      setPublishing(true);
+      setError("");
 
-    await apiRequest(
-      `/kpi/configurations/${draftId}/publish`,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          criteria: draft.map((criterion, index) => ({
-            name: criterion.name.trim(),
-            weight: criterion.weight,
-            displayOrder: index + 1,
-          })),
-        }),
-      }
-    );
+      await apiRequest(
+        `/kpi/configurations/${draftId}/publish`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            criteria: draft.map((criterion, index) => ({
+              name: criterion.name.trim(),
+              weight: criterion.weight,
+              displayOrder: index + 1,
+            })),
+          }),
+        }
+      );
 
-    await loadConfigurations();
-    alert("KPI configuration published successfully.");
-  } catch (err) {
-    setError(
-      err instanceof Error
-        ? err.message
-        : "Failed to publish configuration."
-    );
-  } finally {
-    setPublishing(false);
+      await loadConfigurations();
+      alert("KPI configuration published successfully.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "Failed to publish configuration."
+      );
+    } finally {
+      setPublishing(false);
+    }
   }
-}
-
 
   async function createNewDraft() {
     try {
@@ -309,7 +307,11 @@ async function publishConfiguration() {
 
       await loadConfigurations();
 
-      alert("New KPI draft created successfully.");
+      alert(
+        activeVersion
+          ? "New KPI draft created successfully."
+          : "Initial KPI configuration created successfully."
+      );
     } catch (err) {
       setError(
         err instanceof Error
@@ -410,15 +412,17 @@ async function publishConfiguration() {
               KPI criteria.
             </p>
 
-            {activeVersion && (
-              <Button
-                onClick={createNewDraft}
-                disabled={creatingDraft}
-              >
-                <Plus size={16} />
-                {creatingDraft ? "Creating Draft..." : "Create New Draft"}
-              </Button>
-            )}
+            <Button
+              onClick={createNewDraft}
+              disabled={creatingDraft}
+            >
+              <Plus size={16} />
+              {creatingDraft
+                ? "Creating Draft..."
+                : activeVersion
+                  ? "Create New Draft"
+                  : "Create Initial Configuration"}
+            </Button>
           </div>
         ) : (
           <>
